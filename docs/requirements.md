@@ -1,80 +1,77 @@
-Oxidized Deployment -- Requirements & Design Specification
-=========================================================
+# Oxidized Deployment -- Requirements & Design Specification
 
-1\. Purpose
------------
+## 1. Purpose
 
-This project defines a **production-grade, containerized deployment of Oxidized** for network configuration backup and auditing.
+This project defines a **production-grade, containerized deployment of Oxidized** for network configuration backup
+and auditing.
 
 The goals are:
 
--   Reliable configuration backups
+- Reliable configuration backups
 
--   Git-based versioning from day one
+- Git-based versioning from day one
 
--   Fully containerized (Podman)
+- Fully containerized (Podman)
 
--   Idempotent deployment
+- Idempotent deployment
 
--   Easy recovery and upgrades
+- Easy recovery and upgrades
 
--   Observable and monitorable
+- Observable and monitorable
 
--   Designed for long-term maintenance
+- Designed for long-term maintenance
 
 This document serves as the **source of truth** for implementation and automation.
 
-* * * * *
+---
 
-2\. Scope
----------
+## 2. Scope
 
 ### In Scope
 
--   Oxidized deployment via Podman
+- Oxidized deployment via Podman
 
--   Persistent storage for:
+- Persistent storage for:
 
-    -   configs
+  - configs
 
-    -   git repository
+  - git repository
 
-    -   logs
+  - logs
 
--   CSV-based inventory
+- CSV-based inventory
 
--   Web UI enabled
+- Web UI enabled
 
--   Git output (local repository)
+- Git output (local repository)
 
--   Log rotation
+- Log rotation
 
--   SELinux-safe configuration
+- SELinux-safe configuration
 
--   Monitoring readiness (Zabbix-compatible)
+- Monitoring readiness (Zabbix-compatible)
 
--   Version-pinned container image
+- Version-pinned container image
 
--   RHEL 10 compatible
+- RHEL 10 compatible
 
 ### Out of Scope (for now)
 
--   GitLab/GitHub integration
+- GitLab/GitHub integration
 
--   NetBox integration
+- NetBox integration
 
--   Multi-instance clustering
+- Multi-instance clustering
 
--   High availability
+- High availability
 
--   UI customization
+- UI customization
 
--   Device provisioning
+- Device provisioning
 
-* * * * *
+---
 
-3\. Target Platform
--------------------
+## 3. Target Platform
 
 | Component | Requirement |
 | --- | --- |
@@ -86,70 +83,69 @@ This document serves as the **source of truth** for implementation and automatio
 | Expected scale | ~100 devices |
 | Polling frequency | Hourly |
 
-* * * * *
+---
 
-4\. Functional Requirements
----------------------------
+## 4. Functional Requirements
 
 ### 4.1 Oxidized Service
 
--   Must run as a container
+- Must run as a container
 
--   Must survive restart/redeployment
+- Must survive restart/redeployment
 
--   Must expose Web UI
+- Must expose Web UI
 
--   Must expose REST API
+- Must expose REST API
 
--   Must store device configs in Git
+- Must store device configs in Git
 
 ### 4.2 Inventory
 
--   Inventory source: CSV
+- Inventory source: CSV
 
--   CSV fields:
+- CSV fields:
 
-    -   name
+  - name
 
-    -   ip
+  - ip
 
-    -   model
+  - model
 
-    -   group
+  - group
 
--   CSV must be editable outside the container
+- CSV must be editable outside the container
 
--   Oxidized must reload inventory without rebuild
+- Oxidized must reload inventory without rebuild
 
 ### 4.3 Git Integration
 
--   Local Git repository
+- Local Git repository
 
--   One repo for all devices
+- One repo for all devices
 
--   Automatic commits
+- Automatic commits
 
--   Human-readable diffs
+- Human-readable diffs
 
--   No remote required initially
+- No remote required initially
 
 ### 4.4 Logging
 
--   Logs written to disk (not journald)
+- Logs written to disk (not journald)
 
--   Log path:
+- Log path:
 
     `/var/lib/oxidized/logs`
 
--   Log rotation:
+- Log rotation:
 
-    -   Daily
+  - Daily
 
-    -   14-day retention
+  - 14-day retention
 
-    -   Compressed
+  - Compressed
 
--   No logs written to `/var/log`
+- No logs written to `/var/log`
 
 ### 4.5 Persistence
 
@@ -164,59 +160,57 @@ Persisted paths:
 | /var/lib/oxidized/configs.git | Git repo |
 | /var/lib/oxidized/logs | Logs |
 
-* * * * *
+---
 
-5\. Non-Functional Requirements
--------------------------------
+## 5. Non-Functional Requirements
 
 ### Stability
 
--   Use pinned container image version
+- Use pinned container image version
 
--   No `latest` tags
+- No `latest` tags
 
--   Manual upgrade process
+- Manual upgrade process
 
 ### Security
 
--   No plaintext secrets in repo
+- No plaintext secrets in repo
 
--   SELinux enforced
+- SELinux enforced
 
--   No privileged container
+- No privileged container
 
--   Minimal exposed ports
+- Minimal exposed ports
 
 ### Maintainability
 
--   Idempotent deployment
+- Idempotent deployment
 
--   Declarative configuration
+- Declarative configuration
 
--   Minimal manual steps
+- Minimal manual steps
 
--   Clear directory structure
+- Clear directory structure
 
 ### Observability
 
--   Web UI accessible
+- Web UI accessible
 
--   API available for monitoring
+- API available for monitoring
 
--   Compatible with Zabbix polling
+- Compatible with Zabbix polling
 
--   Detect:
+- Detect:
 
-    -   service down
+  - service down
 
-    -   stale backups
+  - stale backups
 
-    -   repeated failures
+  - repeated failures
 
-* * * * *
+---
 
-6\. Container Requirements
---------------------------
+## 6. Container Requirements
 
 ### Image
 
@@ -224,10 +218,9 @@ Persisted paths:
 
 ### Runtime
 
--   Podman
+- Podman
 
--   Systemd-managed (Quadlet or unit file)
-
+- Systemd-managed (Quadlet or unit file)
 
 ### **6.1 Container Lifecycle Management**
 
@@ -235,48 +228,47 @@ Oxidized **must be deployed using Podman Quadlets** and managed by **systemd**.
 
 Manual `podman run` commands are **not permitted** for production deployment.
 
-#### Requirements:
+#### Requirements
 
--   A `.container` file must be used
+- A `.container` file must be used
 
--   The service must:
+- The service must:
 
-    -   start automatically on boot
+  - start automatically on boot
 
-    -   restart on failure
+  - restart on failure
 
-    -   be manageable via `systemctl`
+  - be manageable via `systemctl`
 
--   No manual container lifecycle management
+- No manual container lifecycle management
 
-#### Expected behavior:
+#### Expected behavior
 
 `systemctl enable oxidized
 systemctl start oxidized
 systemctl status oxidized`
 
-* * * * *
+---
 
 ### **6.2 Quadlet Requirements**
 
 The Quadlet configuration must:
 
--   Use a pinned Oxidized image version
+- Use a pinned Oxidized image version
 
--   Define all required bind mounts
+- Define all required bind mounts
 
--   Apply SELinux labeling (`:Z`)
+- Apply SELinux labeling (`:Z`)
 
--   Expose port 8888
+- Expose port 8888
 
--   Restart automatically
+- Restart automatically
 
--   Not use `latest` tags
+- Not use `latest` tags
 
-* * * * *
+---
 
-What This Means Practically
----------------------------
+### What This Means Practically
 
 Instead of:
 
@@ -294,36 +286,35 @@ And is controlled via:
 
 `systemctl enable --now oxidized`
 
-* * * * *
+---
 
-Why This Matters (and You're Right to Ask)
-------------------------------------------
+### Why This Matters (and You're Right to Ask)
 
 Without Quadlets:
 
--   Containers won't reliably start after reboot
+- Containers won't reliably start after reboot
 
--   Changes aren't tracked declaratively
+- Changes aren't tracked declaratively
 
--   Automation becomes brittle
+- Automation becomes brittle
 
--   Troubleshooting becomes harder
+- Troubleshooting becomes harder
 
--   You lose the benefit of systemd integration
+- You lose the benefit of systemd integration
 
 With Quadlets:
 
--   Fully declarative
+- Fully declarative
 
--   Reproducible
+- Reproducible
 
--   Version-controllable
+- Version-controllable
 
--   Safe upgrades
+- Safe upgrades
 
--   Clean rollback
+- Clean rollback
 
-* * * * *
+---
 
 ### Ports
 
@@ -331,10 +322,9 @@ With Quadlets:
 | --- | --- |
 | 8888 | Web UI / API |
 
-* * * * *
+---
 
-7\. Directory Layout (Host)
----------------------------
+## 7. Directory Layout (Host)
 
 `/srv/oxidized/
 ├── config/
@@ -348,25 +338,23 @@ With Quadlets:
 └── logs/
     └── oxidized.log`
 
-* * * * *
+---
 
-8\. Configuration Requirements
-------------------------------
+## 8. Configuration Requirements
 
-### Oxidized Config Must:
+### Oxidized Config Must
 
--   Use CSV source
+- Use CSV source
 
--   Use Git output
+- Use Git output
 
--   Log to `/var/lib/oxidized/logs`
+- Log to `/var/lib/oxidized/logs`
 
--   Bind REST API to `0.0.0.0`
+- Bind REST API to `0.0.0.0`
 
-* * * * *
+---
 
-9\. Logging & Rotation
-----------------------
+## 9. Logging & Rotation
 
 ### Log location
 
@@ -374,85 +362,147 @@ With Quadlets:
 
 ### Rotation
 
--   Managed by host
+- Managed by host
 
--   logrotate
+- logrotate
 
--   No container-based rotation
+- No container-based rotation
 
-* * * * *
+---
 
-10\. Monitoring & Alerting
---------------------------
+## 10. Monitoring & Alerting
 
 ### Required Signals
 
--   Service running
+- Service running
 
--   API reachable
+- API reachable
 
--   Last backup time per device
+- Last backup time per device
 
--   Failed backup detection
+- Failed backup detection
 
--   Disk usage
+- Disk usage
 
 ### Monitoring Method
 
--   Zabbix HTTP agent
+- Zabbix HTTP agent
 
--   JSON API polling
+- JSON API polling
 
--   Threshold-based alerts
+- Threshold-based alerts
 
-* * * * *
+---
 
-11\. Upgrade Policy
--------------------
+## 11. Upgrade Policy
 
--   Image version pinned
+- Image version pinned
 
--   Manual upgrade only
+- Manual upgrade only
 
--   Rollback supported
+- Rollback supported
 
--   No auto-updates
+- No auto-updates
 
-* * * * *
+---
 
-12\. Future Enhancements (Not Implemented Yet)
-----------------------------------------------
+## 12. Future Enhancements (Not Implemented Yet)
 
--   NetBox inventory
+- NetBox inventory
 
--   Git remote push
+- Git remote push
 
--   Slack notifications
+- Slack notifications
 
--   Secrets manager
+- Secrets manager
 
--   Dashboard UI
+- Dashboard UI
 
--   Multi-instance support
+- Multi-instance support
 
-* * * * *
+---
 
-13\. Success Criteria
----------------------
+## 13. Success Criteria
 
 The deployment is considered successful when:
 
--   Oxidized runs continuously
+- Oxidized runs continuously
 
--   Devices are backed up hourly
+- Devices are backed up hourly
 
--   Git history is populated
+- Git history is populated
 
--   Logs rotate cleanly
+- Logs rotate cleanly
 
--   No data loss occurs during restart
+- No data loss occurs during restart
 
--   Zabbix can monitor health
+- Zabbix can monitor health
 
+You are Cursor. Create a production-ready deployment for Oxidized using Podman, running as a dedicated non-root user
+named `oxidized` with a fixed UID/GID, and ensure all bind-mount host paths have correct ownership/permissions for
+that UID/GID.
 
+Additonal Requirements:
+1) Host user/group:
+   - Create Linux user `oxidized` and group `oxidized` if missing.
+   - Use fixed UID=2000 and GID=2000 (idempotent: don’t fail if they exist; verify and warn if mismatched).
+   - Shell should be nologin; home should be `/home/oxidized`.
 
+2) Host directories (bind mounts under /var):
+   - Use these host paths:
+     - `/var/lib/oxidized` for Oxidized working data (config, router.db, git repo, logs if applicable)
+     - `/var/lib/oxidized/ssh` for SSH keys
+     - `/var/lib/oxidized/output` for backups/output if the image uses it
+   - Create all directories if missing.
+   - Set ownership recursively to 2000:2000 for any directory that must be writable by Oxidized.
+   - Set permissions:
+     - directories: 0750
+     - files: 0640
+     - SSH private keys: 0600
+     - SSH public keys/known_hosts: 0644
+   - Ensure mount points that should be read-only are owned properly but mounted read-only.
+
+3) Podman deployment style:
+   - Prefer a systemd service generated by Podman (quadlet OR `podman generate systemd`),
+     and enable it so it starts on boot.
+   - Container must run as non-root: `--user 2000:2000` (or equivalent).
+   - Do not use privileged mode.
+   - Drop all Linux capabilities.
+   - Use `--read-only` root filesystem and add tmpfs for `/tmp` (and any other required runtime dirs).
+   - Add `no-new-privileges` security option.
+   - Use a dedicated podman network (bridge) unless host networking is required (it likely isn’t).
+   - Expose only what's required (Oxidized typically needs no inbound ports;
+     it initiates SSH/Telnet outbound to devices).
+
+4) Oxidized container/image and config:
+   - Use a well-known Oxidized image (choose one and justify briefly).
+   - Store `config` and `router.db` under `/var/lib/oxidized` on the host and bind mount into the container
+     at the correct path for that image.
+   - Configure git output to a repo directory under `/var/lib/oxidized` (e.g., `/var/lib/oxidized/repo`).
+   - Ensure SSH keys are used from `/var/lib/oxidized/ssh` and document expected filenames and permissions.
+   - Provide a minimal working `config` and `router.db` examples.
+
+5) Deliverables:
+   - A single bash script `deploy-oxidized-podman.sh` that:
+     - installs prerequisites (podman, systemd integration tools as needed) for RHEL/Fedora-like systems
+     - creates user/group and directories with correct ownership/perms
+     - writes Oxidized config files to `/var/lib/oxidized` if absent (do not overwrite existing)
+     - creates the quadlet file (preferred) OR systemd unit (if using generate systemd)
+     - reloads systemd, enables and starts the service
+     - prints verification commands (`systemctl status`, `podman ps`, and a quick log check)
+   - A short README section at the end of the script (comments) describing:
+     - how to change UID/GID
+     - how to add devices to router.db
+     - where backups are stored
+     - troubleshooting tips for permission errors (what to check)
+
+Constraints:
+- Must be idempotent: running the script multiple times should not break the setup.
+- Must not loosen permissions broadly (no chmod 777).
+- Must not assume SELinux is disabled; if SELinux is enforcing, apply correct labeling for bind mounts
+  (use `:Z` or `:z` as appropriate) and explain choice.
+- Use absolute paths everywhere.
+- Use `set -euo pipefail` and clear error messages.
+
+Output:
+- Provide the full contents of `deploy-oxidized-podman.sh` only, no extra commentary outside the sc

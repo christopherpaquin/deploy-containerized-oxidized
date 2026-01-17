@@ -41,24 +41,24 @@ This data can be consumed by Zabbix using **HTTP Agent** items.
 
 ### What to Monitor
 
-1. **Service Availability**
+1. Service Availability
    - Is Oxidized responding?
    - Is port 8888 reachable?
 
-2. **Backup Freshness**
+2. Backup Freshness
    - When was the last successful backup per device?
    - Are any devices stale (not backed up in > 2 hours)?
 
-3. **Backup Success Rate**
+3. Backup Success Rate
    - How many devices are failing?
    - What's the overall success rate?
 
-4. **System Resources**
+4. System Resources
    - Container CPU usage
    - Container memory usage
    - Disk space in `/srv/oxidized`
 
-5. **Git Repository Health**
+5. Git Repository Health
    - Is the Git repository growing?
    - Are commits being made?
 
@@ -161,7 +161,7 @@ Zabbix can poll the Oxidized API using **HTTP Agent** items.
 
 #### 1. Service Health Check
 
-```
+```ini
 Name: Oxidized: Service Status
 Type: HTTP Agent
 Key: oxidized.service.status
@@ -182,7 +182,7 @@ Preprocessing:
 
 #### 2. All Nodes Status (JSON Data)
 
-```
+```ini
 Name: Oxidized: All Nodes Status (JSON)
 Type: HTTP Agent
 Key: oxidized.nodes.json
@@ -199,7 +199,7 @@ Preprocessing:
 
 #### 3. LLD Rule: Discover Devices
 
-```
+```ini
 Name: Oxidized: Device Discovery
 Type: HTTP Agent
 Key: oxidized.devices.discovery
@@ -259,7 +259,7 @@ LLD Macros:
 
 #### 1. Oxidized Service Down
 
-```
+```ini
 Name: Oxidized: Service is Down
 Expression: {Oxidized Server:oxidized.service.up.last()}=0
 Severity: Disaster
@@ -275,7 +275,7 @@ Action:
 
 #### 2. Device Backup Stale
 
-```
+```ini
 Name: Oxidized: Device {#DEVICE_NAME} backup is stale
 Expression: {Oxidized Server:oxidized.device[{#DEVICE_NAME},age].last()}>7200
 Severity: High
@@ -295,7 +295,7 @@ Action:
 
 #### 3. Device Backup Failed
 
-```
+```ini
 Name: Oxidized: Device {#DEVICE_NAME} backup failed
 Expression: {Oxidized Server:oxidized.device[{#DEVICE_NAME},status].str("success")}=0
 Severity: Warning
@@ -311,14 +311,14 @@ Action:
 
 #### 4. Low Success Rate
 
-```
+```ini
 Name: Oxidized: Low success rate
 Expression: {Oxidized Server:oxidized.devices.success_rate.last()}<90
 Severity: Warning
 Duration: 30 minutes
 
 Message:
-Oxidized success rate is {ITEM.LASTVALUE}%. 
+Oxidized success rate is {ITEM.LASTVALUE}%.
 Check failed devices.
 
 Action:
@@ -330,7 +330,7 @@ Action:
 
 #### 5. Disk Space Low
 
-```
+```ini
 Name: Oxidized: Low disk space
 Expression: {Oxidized Server:vfs.fs.size[/srv/oxidized,pfree].last()}<20
 Severity: Warning
@@ -398,8 +398,8 @@ curl -s http://localhost:8888/nodes.json | \
 ```bash
 # Get devices with stale backups (>2 hours)
 curl -s http://localhost:8888/nodes.json | jq '
-  .[] | 
-  select(.last.end) | 
+  .[] |
+  select(.last.end) |
   {
     name,
     last_backup: .last.end,
@@ -435,8 +435,8 @@ return JSON.stringify(lld);
 // Calculate success rate
 var nodes = JSON.parse(value);
 var total = nodes.length;
-var success = nodes.filter(function(n) { 
-  return n.status === "success"; 
+var success = nodes.filter(function(n) {
+  return n.status === "success";
 }).length;
 
 return total > 0 ? (success / total * 100).toFixed(2) : 0;
@@ -495,7 +495,7 @@ systemctl status oxidized
 
 **Diagnosis**: Review trigger thresholds and durations
 
-**Solution**: 
+**Solution**:
 - Increase alert duration
 - Adjust thresholds
 - Add maintenance windows for known issues
@@ -506,13 +506,13 @@ systemctl status oxidized
 
 ### Oxidized API Documentation
 
-- **GitHub**: https://github.com/yggdrasil-network/oxidized
-- **REST API**: https://github.com/yggdrasil-network/oxidized/blob/master/docs/API.md
+- **GitHub**: <https://github.com/yggdrasil-network/oxidized>
+- **REST API**: <https://github.com/yggdrasil-network/oxidized/blob/master/docs/API.md>
 
 ### Zabbix HTTP Agent
 
-- **Documentation**: https://www.zabbix.com/documentation/current/en/manual/config/items/itemtypes/http
-- **JSONPath**: https://www.zabbix.com/documentation/current/en/manual/config/macros/usermacros_functions
+- **Documentation**: <https://www.zabbix.com/documentation/current/en/manual/config/items/itemtypes/http>
+- **JSONPath**: <https://www.zabbix.com/documentation/current/en/manual/config/macros/usermacros_functions>
 
 ---
 
@@ -522,23 +522,27 @@ systemctl status oxidized
 
 For a quick start, monitor these essentials:
 
-1. **Service Health** (every 1 min):
+1. Service Health (every 1 min):
+
    ```bash
    curl -s -o /dev/null -w "%{http_code}" http://oxidized:8888/
    ```
 
-2. **Total Devices** (every 5 min):
+2. Total Devices (every 5 min):
+
    ```bash
    curl -s http://oxidized:8888/nodes.json | jq 'length'
    ```
 
-3. **Failed Devices Count** (every 5 min):
+3. Failed Devices Count (every 5 min):
+
    ```bash
    curl -s http://oxidized:8888/nodes.json | \
      jq '[.[] | select(.status != "success")] | length'
    ```
 
-4. **Success Rate** (every 5 min):
+4. Success Rate (every 5 min):
+
    ```bash
    curl -s http://oxidized:8888/nodes.json | jq '
      (([.[] | select(.status == "success")] | length) / length * 100)
@@ -560,7 +564,7 @@ For a quick start, monitor these essentials:
 
 ---
 
-**Monitoring Best Practices**: 
+**Monitoring Best Practices**:
 - Start simple, add complexity as needed
 - Focus on actionable alerts
 - Review and tune thresholds regularly

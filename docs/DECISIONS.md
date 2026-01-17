@@ -1,12 +1,14 @@
 # 📝 Implementation Decisions
 
-This document records key implementation decisions made during the design and development of this containerized Oxidized deployment.
+This document records key implementation decisions made during the design and development
+of this containerized Oxidized deployment.
 
 ---
 
 ## 🎯 Purpose
 
 This document serves as a **decision log** to:
+
 - Explain why specific approaches were chosen
 - Document alternatives considered
 - Provide context for future maintainers
@@ -34,7 +36,7 @@ This document serves as a **decision log** to:
    - ❌ Configuration not tracked
    - ❌ Difficult to manage
 
-2. **Traditional systemd unit file with ExecStart**
+2. Traditional systemd unit file with ExecStart
    - ✅ Works reliably
    - ❌ Verbose and error-prone
    - ❌ Hard to maintain long container configurations
@@ -46,8 +48,9 @@ This document serves as a **decision log** to:
    - ✅ Version-controllable
    - ✅ Systemd native (247+)
 
-**Rationale**:
-Quadlets provide the best balance of simplicity, maintainability, and systemd integration. They generate proper systemd units automatically and are the recommended approach for RHEL 9/10.
+Rationale:
+Quadlets provide the best balance of simplicity, maintainability, and systemd integration.
+They generate proper systemd units automatically and are the recommended approach for RHEL 9/10.
 
 **References**:
 - [Podman Quadlet Documentation](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
@@ -81,10 +84,13 @@ Quadlets provide the best balance of simplicity, maintainability, and systemd in
    - ✅ No loss of functionality for single-server
    - ⚠️ Requires conversion if adding remote push later
 
-**Rationale**:
-For a single-server deployment without remote Git integration, a regular repository is more user-friendly. Files can be directly inspected, compared, and accessed without Git commands. If remote push is needed later, the repository can be converted to bare.
+Rationale:
+For a single-server deployment without remote Git integration, a regular repository is more user-friendly.
+Files can be directly inspected, compared, and accessed without Git commands.
+If remote push is needed later, the repository can be converted to bare.
 
 **Migration Path** (if needed in future):
+
 ```bash
 cd /srv/oxidized/git
 git clone --bare configs.git configs-bare.git
@@ -124,8 +130,10 @@ mv configs-bare.git configs.git
    - ✅ No conflicts with potential native packages
    - ✅ Commonly used for containerized services
 
-**Rationale**:
-`/srv` is specifically intended for "data for services provided by the system" per FHS. This makes it ideal for containerized service data. It's also easier to manage, backup, and doesn't conflict with system paths.
+Rationale:
+`/srv` is specifically intended for "data for services provided by the system" per FHS.
+This makes it ideal for containerized service data.
+It's also easier to manage, backup, and doesn't conflict with system paths.
 
 **References**:
 - [Filesystem Hierarchy Standard (FHS)](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s17.html)
@@ -162,8 +170,9 @@ mv configs-bare.git configs.git
    - ❌ Violates "boring solutions" principle
    - ❌ `chcon` changes are not persistent across relabeling
 
-**Rationale**:
-Since only one container (Oxidized) accesses these volumes, `:Z` provides appropriate isolation and automatic SELinux context management without requiring manual commands.
+Rationale:
+Since only one container (Oxidized) accesses these volumes, `:Z` provides appropriate isolation
+and automatic SELinux context management without requiring manual commands.
 
 **References**:
 - [Podman SELinux Documentation](https://docs.podman.io/en/latest/markdown/podman-run.1.html#security-opt)
@@ -201,8 +210,10 @@ Since only one container (Oxidized) accesses these volumes, `:Z` provides approp
    - ✅ Complies with requirements
    - ✅ Logrotate handles via copytruncate
 
-**Rationale**:
-Keeping logs within the application state directory (`/var/lib/oxidized`) ensures persistence and aligns with containerized application best practices. The host-side logrotate uses `copytruncate` to handle the open file.
+Rationale:
+Keeping logs within the application state directory (`/var/lib/oxidized`) ensures persistence
+and aligns with containerized application best practices.
+The host-side logrotate uses `copytruncate` to handle the open file.
 
 **References**:
 - docs/requirements.md: "No logs written to `/var/log`"
@@ -239,8 +250,9 @@ Keeping logs within the application state directory (`/var/lib/oxidized`) ensure
    - ✅ Easy rollback
    - ✅ Documented upgrade path
 
-**Rationale**:
-Version pinning is essential for production stability. `0.30.1` is a recent stable release. Upgrades are manual and deliberate, following the process in `UPGRADE.md`.
+Rationale:
+Version pinning is essential for production stability. `0.30.1` is a recent stable release.
+Upgrades are manual and deliberate, following the process in `UPGRADE.md`.
 
 **Note**: When implementing this, verify the latest stable version on Docker Hub and update accordingly.
 
@@ -259,25 +271,30 @@ Version pinning is essential for production stability. `0.30.1` is a recent stab
 
 **Alternatives Considered**:
 
-1. **Rootless Podman**
-   - ✅ Better security isolation
-   - ❌ Complications with port binding < 1024 (not applicable here)
-   - ❌ User-level systemd units more complex
-   - ❌ File permission complexity with host mounts
-   - ⚠️ More difficult to manage in multi-admin environment
+#### 1. Rootless Podman
 
-2. **Rootful Podman** (CHOSEN)
-   - ✅ Simple systemd integration
-   - ✅ Straightforward file permissions
-   - ✅ System-wide service
-   - ✅ Standard for production services
-   - ✅ Container still runs as non-root inside (UID 30000)
+- ✅ Better security isolation
+- ❌ Complications with port binding < 1024 (not applicable here)
+- ❌ User-level systemd units more complex
+- ❌ File permission complexity with host mounts
+- ⚠️ More difficult to manage in multi-admin environment
 
-**Rationale**:
-Rootful Podman provides simpler management for a system-wide production service. The container itself runs as non-root (UID 30000), providing defense-in-depth. This is the standard approach for production services on RHEL.
+#### 2. Rootful Podman (CHOSEN)
+
+- ✅ Simple systemd integration
+- ✅ Straightforward file permissions
+- ✅ System-wide service
+- ✅ Standard for production services
+- ✅ Container still runs as non-root inside (UID 30000)
+
+Rationale:
+Rootful Podman provides simpler management for a system-wide production service.
+The container itself runs as non-root (UID 30000), providing defense-in-depth.
+This is the standard approach for production services on RHEL.
 
 **Security Note**:
-The container process runs as UID 30000 inside the container (User=30000:30000 in Quadlet), providing process isolation even though Podman runs as root.
+The container process runs as UID 30000 inside the container (User=30000:30000 in Quadlet),
+providing process isolation even though Podman runs as root.
 
 ---
 
@@ -294,19 +311,23 @@ The container process runs as UID 30000 inside the container (User=30000:30000 i
 
 **Alternatives Considered**:
 
-1. **Run as root inside container**
-   - ❌ Security risk
-   - ❌ Not necessary
-   - ❌ Violates least privilege
+#### 1. Run as root inside container
 
-2. **Run as UID 30000** (CHOSEN, Oxidized default)
-   - ✅ Oxidized image default
-   - ✅ Non-root process
-   - ✅ Works with SELinux `:Z`
-   - ✅ Least privilege
+- ❌ Security risk
+- ❌ Not necessary
+- ❌ Violates least privilege
 
-**Rationale**:
-The official Oxidized image is designed to run as UID 30000. Using this default ensures compatibility and security. SELinux handles access control via context, making the specific UID less critical.
+#### 2. Run as UID 30000 (CHOSEN, Oxidized default)
+
+- ✅ Oxidized image default
+- ✅ Non-root process
+- ✅ Works with SELinux `:Z`
+- ✅ Least privilege
+
+Rationale:
+The official Oxidized image is designed to run as UID 30000.
+Using this default ensures compatibility and security.
+SELinux handles access control via context, making the specific UID less critical.
 
 ---
 
@@ -330,7 +351,7 @@ The official Oxidized image is designed to run as UID 30000. Using this default 
 | 4 hours | Lower load | Slower change detection | Stable networks |
 | Daily | Minimal load | Stale data risk | Non-critical devices |
 
-**Rationale**:
+Rationale:
 Hourly polling provides a good balance:
 - Changes detected within reasonable time
 - Manageable load on network devices
@@ -354,19 +375,22 @@ Hourly polling provides a good balance:
 
 **Alternatives Considered**:
 
-1. **Traditional rotate (move and recreate)**
-   - ❌ Requires signaling application
-   - ❌ Complex with containers
-   - ❌ May lose log entries
+#### 1. Traditional rotate (move and recreate)
 
-2. **`copytruncate`** (CHOSEN)
-   - ✅ Works with open file handles
-   - ✅ No signaling required
-   - ✅ Container-friendly
-   - ⚠️ Brief potential for log loss during copy (acceptable risk)
+- ❌ Requires signaling application
+- ❌ Complex with containers
+- ❌ May lose log entries
 
-**Rationale**:
-`copytruncate` is the standard approach for containerized applications where you cannot easily signal the process to reopen log files. The tiny window of potential log loss is acceptable for configuration backup logs.
+#### 2. `copytruncate` (CHOSEN)
+
+- ✅ Works with open file handles
+- ✅ No signaling required
+- ✅ Container-friendly
+- ⚠️ Brief potential for log loss during copy (acceptable risk)
+
+Rationale:
+`copytruncate` is the standard approach for containerized applications where you cannot easily signal
+the process to reopen log files. The tiny window of potential log loss is acceptable for configuration backup logs.
 
 ---
 
@@ -383,25 +407,30 @@ Hourly polling provides a good balance:
 
 **Alternatives Considered**:
 
-1. **Plaintext in config** (CHOSEN as default)
-   - ✅ Simple to implement
-   - ✅ Works out of box
-   - ⚠️ File must be protected (permissions)
-   - ⚠️ Not suitable for high-security environments
+#### 1. Plaintext in config (CHOSEN as default)
 
-2. **Environment variables**
-   - ✅ Better security
-   - ❌ Requires Quadlet modification
-   - ❌ More complex for users
+- ✅ Simple to implement
+- ✅ Works out of box
+- ⚠️ File must be protected (permissions)
+- ⚠️ Not suitable for high-security environments
 
-3. **Secrets manager integration**
-   - ✅ Best security
-   - ❌ Complex setup
-   - ❌ External dependencies
-   - ❌ Out of scope
+#### 2. Environment variables
 
-**Rationale**:
-Start with the simplest working solution (plaintext in protected file) with clear documentation about security implications and alternatives. Users can upgrade to environment variables or secrets managers as needed.
+- ✅ Better security
+- ❌ Requires Quadlet modification
+- ❌ More complex for users
+
+#### 3. Secrets manager integration
+
+- ✅ Best security
+- ❌ Complex setup
+- ❌ External dependencies
+- ❌ Out of scope
+
+Rationale:
+Start with the simplest working solution (plaintext in protected file) with clear documentation
+about security implications and alternatives. Users can upgrade to environment variables or
+secrets managers as needed.
 
 **Security Notes**:
 - Config file permissions: 644 (readable by container)
@@ -424,20 +453,23 @@ Start with the simplest working solution (plaintext in protected file) with clea
 
 **Alternatives Considered**:
 
-1. **Include GitLab/GitHub push**
-   - ❌ Requires additional setup
-   - ❌ Credentials management
-   - ❌ Network dependencies
-   - ❌ Out of scope per requirements
+#### 1. Include GitLab/GitHub push
 
-2. **Local Git only** (CHOSEN)
-   - ✅ Simple, reliable
-   - ✅ No external dependencies
-   - ✅ Works offline
-   - ✅ Can be added later if needed
+- ❌ Requires additional setup
+- ❌ Credentials management
+- ❌ Network dependencies
+- ❌ Out of scope per requirements
 
-**Rationale**:
-Local Git provides version control and diff capabilities without external dependencies. Remote push can be added later as an enhancement if needed.
+#### 2. Local Git only (CHOSEN)
+
+- ✅ Simple, reliable
+- ✅ No external dependencies
+- ✅ Works offline
+- ✅ Can be added later if needed
+
+Rationale:
+Local Git provides version control and diff capabilities without external dependencies.
+Remote push can be added later as an enhancement if needed.
 
 **Future Enhancement**:
 If remote push is needed, Oxidized supports Git hooks and remote configuration. See [Oxidized Git Hooks Documentation](https://github.com/yggdrasil-network/oxidized/blob/master/docs/Hooks.md).
@@ -484,7 +516,7 @@ When adding new decisions, use this format:
    - ✅ Pros
    - ❌ Cons
 
-**Rationale**: [Why this option was chosen]
+Rationale: [Why this option was chosen]
 
 **References**: [Links to relevant docs]
 ```

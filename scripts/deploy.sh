@@ -12,9 +12,12 @@ readonly EXIT_INVALID_USAGE=2
 readonly EXIT_MISSING_DEPENDENCY=3
 
 # Configuration
+# shellcheck disable=SC2155  # Separate declaration is unnecessary for readonly
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2155
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly OXIDIZED_ROOT="/srv/oxidized"
+readonly ENV_FILE="${REPO_ROOT}/.env"
+readonly ENV_EXAMPLE="${REPO_ROOT}/env.example"
 readonly QUADLET_DIR="/etc/containers/systemd"
 readonly LOGROTATE_DIR="/etc/logrotate.d"
 
@@ -30,41 +33,117 @@ DRY_RUN=false
 SKIP_CREDENTIALS=false
 VERBOSE=false
 
-# Cleanup function
-cleanup() {
-    local exit_code=$?
-    if [[ ${exit_code} -ne 0 ]]; then
-        log_error "Deployment failed with exit code ${exit_code}"
+# Load environment configuration
+load_env() {
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    log_error ".env file not found: ${ENV_FILE}"
+    log_error ""
+    log_error "Please create your .env file from the template:"
+    log_error "  cp ${ENV_EXAMPLE} ${ENV_FILE}"
+    log_error "  vim ${ENV_FILE}  # Edit configuration values"
+    log_error "  chmod 600 ${ENV_FILE}  # Restrict permissions"
+    log_error ""
+    log_error "See env.example for all available configuration options"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Check .env file permissions (should not be world-readable)
+  local env_perms
+  env_perms=$(stat -c "%a" "${ENV_FILE}" 2> /dev/null || stat -f "%A" "${ENV_FILE}" 2> /dev/null || echo "000")
+  if [[ "${env_perms: -1}" -gt 0 ]]; then
+    log_warn ".env file is world-readable (permissions: ${env_perms})"
+    log_warn "Restricting permissions: chmod 600 ${ENV_FILE}"
+    chmod 600 "${ENV_FILE}"
+  fi
+
+  # Source the .env file
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+
+  log_info "Loaded configuration from ${ENV_FILE}"
+}
+
+# Validate required environment variables
+validate_env() {
+  local required_vars=(
+    "OXIDIZED_USER"
+    "OXIDIZED_GROUP"
+    "OXIDIZED_UID"
+    "OXIDIZED_GID"
+    "OXIDIZED_ROOT"
+    "OXIDIZED_IMAGE"
+    "CONTAINER_NAME"
+    "PODMAN_NETWORK"
+  )
+
+  local missing_vars=()
+
+  for var in "${required_vars[@]}"; do
+    if [[ -z "${!var:-}" ]]; then
+      missing_vars+=("${var}")
     fi
+  done
+
+  if [[ ${#missing_vars[@]} -gt 0 ]]; then
+    log_error "Missing required environment variables in ${ENV_FILE}:"
+    for var in "${missing_vars[@]}"; do
+      log_error "  - ${var}"
+    done
+    log_error ""
+    log_error "Please check your .env file against .env.example"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Validate UID/GID are numeric
+  if ! [[ "${OXIDIZED_UID}" =~ ^[0-9]+$ ]]; then
+    log_error "OXIDIZED_UID must be numeric: ${OXIDIZED_UID}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  if ! [[ "${OXIDIZED_GID}" =~ ^[0-9]+$ ]]; then
+    log_error "OXIDIZED_GID must be numeric: ${OXIDIZED_GID}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  log_success "Environment variables validated"
+}
+
+# Cleanup function
+# shellcheck disable=SC2317  # Function invoked via trap
+cleanup() {
+  local exit_code=$?
+  if [[ ${exit_code} -ne 0 ]]; then
+    log_error "Deployment failed with exit code ${exit_code}"
+  fi
 }
 
 trap cleanup EXIT
 
 # Logging functions
 log_info() {
-    echo -e "${COLOR_BLUE}[INFO]${COLOR_RESET} $*"
+  echo -e "${COLOR_BLUE}[INFO]${COLOR_RESET} $*"
 }
 
 log_success() {
-    echo -e "${COLOR_GREEN}[SUCCESS]${COLOR_RESET} $*"
+  echo -e "${COLOR_GREEN}[SUCCESS]${COLOR_RESET} $*"
 }
 
 log_warn() {
-    echo -e "${COLOR_YELLOW}[WARN]${COLOR_RESET} $*"
+  echo -e "${COLOR_YELLOW}[WARN]${COLOR_RESET} $*"
 }
 
 log_error() {
-    echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} $*" >&2
+  echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} $*" >&2
 }
 
 log_step() {
-    echo ""
-    echo -e "${COLOR_GREEN}==>${COLOR_RESET} $*"
+  echo ""
+  echo -e "${COLOR_GREEN}==>${COLOR_RESET} $*"
 }
 
 # Show usage
 usage() {
-    cat <<EOF
+  cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
 Automates the deployment of containerized Oxidized on RHEL 10.
@@ -96,450 +175,616 @@ EOF
 
 # Check if running as root
 check_root() {
-    if [[ ${EUID} -ne 0 ]]; then
-        log_error "This script must be run as root (or with sudo)"
-        exit ${EXIT_INVALID_USAGE}
-    fi
+  if [[ ${EUID} -ne 0 ]]; then
+    log_error "This script must be run as root (or with sudo)"
+    exit ${EXIT_INVALID_USAGE}
+  fi
 }
 
 # Check prerequisites
 check_prerequisites() {
-    log_step "Checking prerequisites"
-    
-    local missing_deps=()
-    local required_commands=("podman" "git" "systemctl" "curl" "jq")
-    
-    for cmd in "${required_commands[@]}"; do
-        if ! command -v "${cmd}" &> /dev/null; then
-            missing_deps+=("${cmd}")
-        fi
-    done
-    
-    if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        log_error "Missing required dependencies: ${missing_deps[*]}"
-        log_error "Install with: sudo dnf install -y ${missing_deps[*]}"
-        log_error "See docs/PREREQUISITES.md for details"
-        exit ${EXIT_MISSING_DEPENDENCY}
+  log_step "Checking prerequisites"
+
+  local missing_deps=()
+  local required_commands=("podman" "git" "systemctl" "curl" "jq")
+
+  for cmd in "${required_commands[@]}"; do
+    if ! command -v "${cmd}" &> /dev/null; then
+      missing_deps+=("${cmd}")
     fi
-    
-    log_success "All required commands found"
-    
-    # Check OS version
-    if [[ -f /etc/redhat-release ]]; then
-        local os_version
-        os_version=$(cat /etc/redhat-release)
-        log_info "OS: ${os_version}"
+  done
+
+  if [[ ${#missing_deps[@]} -gt 0 ]]; then
+    log_error "Missing required dependencies: ${missing_deps[*]}"
+    log_error "Install with: sudo dnf install -y ${missing_deps[*]}"
+    log_error "See docs/PREREQUISITES.md for details"
+    exit ${EXIT_MISSING_DEPENDENCY}
+  fi
+
+  log_success "All required commands found"
+
+  # Check OS version
+  if [[ -f /etc/redhat-release ]]; then
+    local os_version
+    os_version=$(cat /etc/redhat-release)
+    log_info "OS: ${os_version}"
+  else
+    log_warn "Not running on RHEL (best-effort support)"
+  fi
+
+  # Check SELinux status
+  if command -v getenforce &> /dev/null; then
+    local selinux_status
+    selinux_status=$(getenforce)
+    log_info "SELinux: ${selinux_status}"
+
+    if [[ "${selinux_status}" != "Enforcing" ]]; then
+      log_warn "SELinux is not in Enforcing mode"
+      log_warn "This deployment is designed for SELinux enforcing"
+    fi
+  fi
+
+  # Check systemd version (need >= 247 for Quadlets)
+  local systemd_version
+  systemd_version=$(systemctl --version | head -n1 | awk '{print $2}')
+  log_info "systemd version: ${systemd_version}"
+
+  if [[ ${systemd_version} -lt 247 ]]; then
+    log_error "systemd version ${systemd_version} is too old"
+    log_error "Quadlets require systemd >= 247"
+    exit ${EXIT_MISSING_DEPENDENCY}
+  fi
+
+  # Check disk space (parent directory of OXIDIZED_ROOT)
+  local parent_dir
+  parent_dir=$(dirname "${OXIDIZED_ROOT}")
+  local available_space
+  available_space=$(df -BG "${parent_dir}" 2> /dev/null | awk 'NR==2 {print $4}' | sed 's/G//' || echo "0")
+  log_info "Available space in ${parent_dir}: ${available_space}GB"
+
+  if [[ ${available_space} -lt 10 ]]; then
+    log_warn "Less than 10GB available in ${parent_dir}"
+    log_warn "You may run out of space for Git repository and logs"
+  fi
+}
+
+# Create oxidized user and group
+create_user() {
+  log_step "Creating oxidized user and group"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would create user/group ${OXIDIZED_USER}:${OXIDIZED_GROUP} (${OXIDIZED_UID}:${OXIDIZED_GID})"
+    return
+  fi
+
+  # Check if group exists
+  if getent group "${OXIDIZED_GROUP}" > /dev/null 2>&1; then
+    local existing_gid
+    existing_gid=$(getent group "${OXIDIZED_GROUP}" | cut -d: -f3)
+    if [[ "${existing_gid}" != "${OXIDIZED_GID}" ]]; then
+      log_warn "Group ${OXIDIZED_GROUP} exists but has GID ${existing_gid}, expected ${OXIDIZED_GID}"
+      log_warn "Continuing anyway, but you may need to fix ownership manually"
     else
-        log_warn "Not running on RHEL (best-effort support)"
+      log_info "Group ${OXIDIZED_GROUP} already exists with correct GID ${OXIDIZED_GID}"
     fi
-    
-    # Check SELinux status
-    if command -v getenforce &> /dev/null; then
-        local selinux_status
-        selinux_status=$(getenforce)
-        log_info "SELinux: ${selinux_status}"
-        
-        if [[ "${selinux_status}" != "Enforcing" ]]; then
-            log_warn "SELinux is not in Enforcing mode"
-            log_warn "This deployment is designed for SELinux enforcing"
-        fi
+  else
+    groupadd -g "${OXIDIZED_GID}" "${OXIDIZED_GROUP}"
+    log_success "Created group: ${OXIDIZED_GROUP} (GID: ${OXIDIZED_GID})"
+  fi
+
+  # Check if user exists
+  if id "${OXIDIZED_USER}" > /dev/null 2>&1; then
+    local existing_uid
+    existing_uid=$(id -u "${OXIDIZED_USER}")
+    if [[ "${existing_uid}" != "${OXIDIZED_UID}" ]]; then
+      log_warn "User ${OXIDIZED_USER} exists but has UID ${existing_uid}, expected ${OXIDIZED_UID}"
+      log_warn "Continuing anyway, but you may need to fix ownership manually"
+    else
+      log_info "User ${OXIDIZED_USER} already exists with correct UID ${OXIDIZED_UID}"
     fi
-    
-    # Check systemd version (need >= 247 for Quadlets)
-    local systemd_version
-    systemd_version=$(systemctl --version | head -n1 | awk '{print $2}')
-    log_info "systemd version: ${systemd_version}"
-    
-    if [[ ${systemd_version} -lt 247 ]]; then
-        log_error "systemd version ${systemd_version} is too old"
-        log_error "Quadlets require systemd >= 247"
-        exit ${EXIT_MISSING_DEPENDENCY}
-    fi
-    
-    # Check disk space
-    local available_space
-    available_space=$(df -BG /srv 2>/dev/null | awk 'NR==2 {print $4}' | sed 's/G//' || echo "0")
-    log_info "Available space in /srv: ${available_space}GB"
-    
-    if [[ ${available_space} -lt 10 ]]; then
-        log_warn "Less than 10GB available in /srv"
-        log_warn "You may run out of space for Git repository and logs"
-    fi
+  else
+    useradd -u "${OXIDIZED_UID}" -g "${OXIDIZED_GID}" \
+      -d "${OXIDIZED_HOME}" -s /usr/sbin/nologin \
+      -c "Oxidized Network Backup Service" "${OXIDIZED_USER}"
+    log_success "Created user: ${OXIDIZED_USER} (UID: ${OXIDIZED_UID})"
+  fi
 }
 
 # Create directory structure
 create_directories() {
-    log_step "Creating directory structure"
-    
-    local directories=(
-        "${OXIDIZED_ROOT}"
-        "${OXIDIZED_ROOT}/config"
-        "${OXIDIZED_ROOT}/inventory"
-        "${OXIDIZED_ROOT}/data"
-        "${OXIDIZED_ROOT}/git"
-        "${OXIDIZED_ROOT}/logs"
-    )
-    
-    for dir in "${directories[@]}"; do
-        if [[ -d "${dir}" ]]; then
-            log_info "Directory exists: ${dir}"
-        else
-            if [[ "${DRY_RUN}" == "true" ]]; then
-                log_info "[DRY-RUN] Would create: ${dir}"
-            else
-                mkdir -p "${dir}"
-                chmod 755 "${dir}"
-                log_success "Created: ${dir}"
-            fi
-        fi
-    done
-    
-    if [[ "${DRY_RUN}" == "false" ]]; then
-        chown -R root:root "${OXIDIZED_ROOT}"
-        log_success "Set ownership: root:root on ${OXIDIZED_ROOT}"
+  log_step "Creating directory structure"
+
+  local directories=(
+    "${OXIDIZED_ROOT}"
+    "${OXIDIZED_ROOT}/config"
+    "${OXIDIZED_ROOT}/ssh"
+    "${OXIDIZED_ROOT}/data"
+    "${OXIDIZED_ROOT}/output"
+    "${OXIDIZED_ROOT}/repo"
+  )
+
+  for dir in "${directories[@]}"; do
+    if [[ -d "${dir}" ]]; then
+      log_info "Directory exists: ${dir}"
+    else
+      if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "[DRY-RUN] Would create: ${dir}"
+      else
+        mkdir -p "${dir}"
+        log_success "Created: ${dir}"
+      fi
     fi
+  done
+
+  if [[ "${DRY_RUN}" == "false" ]]; then
+    # Set ownership to oxidized user
+    chown -R "${OXIDIZED_UID}:${OXIDIZED_GID}" "${OXIDIZED_ROOT}"
+    log_success "Set ownership: ${OXIDIZED_UID}:${OXIDIZED_GID} on ${OXIDIZED_ROOT}"
+
+    # Set directory permissions (750 = rwxr-x---)
+    find "${OXIDIZED_ROOT}" -type d -exec chmod 750 {} \;
+    log_success "Set directory permissions: 750"
+
+    # Set file permissions (640 = rw-r-----)
+    find "${OXIDIZED_ROOT}" -type f -exec chmod 640 {} \;
+    log_success "Set file permissions: 640"
+
+    # SSH directory needs stricter permissions
+    if [[ -d "${OXIDIZED_ROOT}/ssh" ]]; then
+      chmod 700 "${OXIDIZED_ROOT}/ssh"
+      log_success "Set SSH directory permissions: 700"
+    fi
+  fi
+}
+
+# Create Podman network
+create_network() {
+  log_step "Creating Podman network"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would create network: ${PODMAN_NETWORK}"
+    return
+  fi
+
+  # Check if network exists
+  if podman network exists "${PODMAN_NETWORK}" 2> /dev/null; then
+    log_info "Network already exists: ${PODMAN_NETWORK}"
+  else
+    podman network create "${PODMAN_NETWORK}"
+    log_success "Created network: ${PODMAN_NETWORK}"
+  fi
 }
 
 # Deploy configuration files
 deploy_config() {
-    log_step "Deploying configuration files"
-    
-    # Deploy Oxidized config
-    local src_config="${REPO_ROOT}/config/oxidized/config"
-    local dst_config="${OXIDIZED_ROOT}/config/config"
-    
-    if [[ ! -f "${src_config}" ]]; then
-        log_error "Source config not found: ${src_config}"
-        exit ${EXIT_GENERAL_FAILURE}
+  log_step "Deploying configuration files"
+
+  # Generate Oxidized config from template
+  local config_template="${REPO_ROOT}/config/oxidized/config.template"
+  local dst_config="${OXIDIZED_ROOT}/config/config"
+
+  if [[ ! -f "${config_template}" ]]; then
+    log_error "Config template not found: ${config_template}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  if [[ -f "${dst_config}" ]]; then
+    log_warn "Config already exists: ${dst_config}"
+    log_warn "Backing up to ${dst_config}.backup"
+    if [[ "${DRY_RUN}" == "false" ]]; then
+      cp "${dst_config}" "${dst_config}.backup.$(date +%Y%m%d_%H%M%S)"
     fi
-    
-    if [[ -f "${dst_config}" ]]; then
-        log_warn "Config already exists: ${dst_config}"
-        log_warn "Backing up to ${dst_config}.backup"
-        if [[ "${DRY_RUN}" == "false" ]]; then
-            cp "${dst_config}" "${dst_config}.backup.$(date +%Y%m%d_%H%M%S)"
-        fi
-    fi
-    
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would generate config from template"
+  else
+    log_info "Generating Oxidized config from template..."
+
+    # Substitute variables in template
+    sed \
+      -e "s|{{OXIDIZED_USERNAME}}|${OXIDIZED_USERNAME:-admin}|g" \
+      -e "s|{{OXIDIZED_PASSWORD}}|${OXIDIZED_PASSWORD:-changeme}|g" \
+      -e "s|{{POLL_INTERVAL}}|${POLL_INTERVAL:-3600}|g" \
+      -e "s|{{DEBUG}}|${DEBUG:-false}|g" \
+      -e "s|{{THREADS}}|${THREADS:-30}|g" \
+      -e "s|{{TIMEOUT}}|${TIMEOUT:-20}|g" \
+      -e "s|{{RETRIES}}|${RETRIES:-3}|g" \
+      -e "s|{{OXIDIZED_API_HOST}}|${OXIDIZED_API_HOST:-0.0.0.0}|g" \
+      -e "s|{{OXIDIZED_WEB_UI}}|${OXIDIZED_WEB_UI:-false}|g" \
+      -e "s|{{GIT_USER_NAME}}|${GIT_USER_NAME:-Oxidized}|g" \
+      -e "s|{{GIT_USER_EMAIL}}|${GIT_USER_EMAIL:-oxidized@example.com}|g" \
+      "${config_template}" > "${dst_config}"
+
+    chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_config}"
+    chmod 640 "${dst_config}"
+    log_success "Generated and deployed: ${dst_config}"
+  fi
+
+  # Deploy inventory example
+  local src_inventory="${REPO_ROOT}/config/oxidized/inventory/devices.csv.example"
+  local dst_inventory="${OXIDIZED_ROOT}/config/router.db"
+
+  if [[ -f "${dst_inventory}" ]]; then
+    log_info "Router database already exists: ${dst_inventory} (keeping existing)"
+  else
     if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would copy: ${src_config} -> ${dst_config}"
+      log_info "[DRY-RUN] Would copy: ${src_inventory} -> ${dst_inventory}"
     else
-        cp "${src_config}" "${dst_config}"
-        chmod 644 "${dst_config}"
-        log_success "Deployed: ${dst_config}"
+      cp "${src_inventory}" "${dst_inventory}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_inventory}"
+      chmod 640 "${dst_inventory}"
+      log_success "Deployed: ${dst_inventory}"
+      log_warn "IMPORTANT: Edit ${dst_inventory} with your devices"
     fi
-    
-    # Deploy inventory example
-    local src_inventory="${REPO_ROOT}/config/oxidized/inventory/devices.csv.example"
-    local dst_inventory="${OXIDIZED_ROOT}/inventory/devices.csv"
-    
-    if [[ -f "${dst_inventory}" ]]; then
-        log_info "Inventory already exists: ${dst_inventory} (keeping existing)"
-    else
-        if [[ "${DRY_RUN}" == "true" ]]; then
-            log_info "[DRY-RUN] Would copy: ${src_inventory} -> ${dst_inventory}"
-        else
-            cp "${src_inventory}" "${dst_inventory}"
-            chmod 644 "${dst_inventory}"
-            log_success "Deployed: ${dst_inventory}"
-            log_warn "IMPORTANT: Edit ${dst_inventory} with your devices"
-        fi
+  fi
+
+  # Create SSH directory with proper permissions
+  if [[ "${DRY_RUN}" == "false" ]]; then
+    chmod 700 "${OXIDIZED_ROOT}/ssh"
+    chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${OXIDIZED_ROOT}/ssh"
+
+    # Create SSH known_hosts file if it doesn't exist
+    local known_hosts="${OXIDIZED_ROOT}/ssh/${SSH_KNOWN_HOSTS:-known_hosts}"
+    if [[ ! -f "${known_hosts}" ]]; then
+      touch "${known_hosts}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${known_hosts}"
+      chmod 644 "${known_hosts}"
+      log_success "Created: ${known_hosts}"
     fi
+  fi
 }
 
 # Configure credentials
 configure_credentials() {
-    if [[ "${SKIP_CREDENTIALS}" == "true" ]]; then
-        log_info "Skipping credential configuration"
-        return
-    fi
-    
-    log_step "Configuring device credentials"
-    
-    local config_file="${OXIDIZED_ROOT}/config/config"
-    
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would prompt for credentials"
-        return
-    fi
-    
-    log_warn "Default credentials in config are: username=oxidized, password=oxidized"
-    
-    read -rp "Do you want to update device credentials now? (y/N): " -n 1
+  if [[ "${SKIP_CREDENTIALS}" == "true" ]]; then
+    log_info "Skipping credential configuration"
+    return
+  fi
+
+  log_step "Configuring device credentials"
+
+  local config_file="${OXIDIZED_ROOT}/config/config"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would prompt for credentials"
+    return
+  fi
+
+  log_warn "Default credentials from .env: username=${OXIDIZED_USERNAME:-admin}, password=${OXIDIZED_PASSWORD:-changeme}"
+
+  read -rp "Do you want to update device credentials now? (y/N): " -n 1
+  echo
+
+  if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
+    read -rp "Enter device username: " username
+    read -rsp "Enter device password: " password
     echo
-    
-    if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
-        read -rp "Enter device username: " username
-        read -rsp "Enter device password: " password
-        echo
-        
-        if [[ -n "${username}" && -n "${password}" ]]; then
-            sed -i "s/^username:.*/username: ${username}/" "${config_file}"
-            sed -i "s/^password:.*/password: ${password}/" "${config_file}"
-            log_success "Updated credentials in ${config_file}"
-        else
-            log_warn "Empty username or password, skipping update"
-        fi
+
+    if [[ -n "${username}" && -n "${password}" ]]; then
+      sed -i "s/^username:.*/username: ${username}/" "${config_file}"
+      sed -i "s/^password:.*/password: ${password}/" "${config_file}"
+      log_success "Updated credentials in ${config_file}"
     else
-        log_info "Skipped credential update"
-        log_warn "Remember to edit ${config_file} before starting service"
+      log_warn "Empty username or password, skipping update"
     fi
+  else
+    log_info "Skipped credential update"
+    log_warn "Remember to edit ${config_file} before starting service"
+  fi
 }
 
 # Initialize Git repository
 initialize_git() {
-    log_step "Initializing Git repository"
-    
-    local git_repo="${OXIDIZED_ROOT}/git/configs.git"
-    
-    if [[ -d "${git_repo}/.git" ]]; then
-        log_info "Git repository already initialized: ${git_repo}"
-        return
-    fi
-    
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would initialize Git repo: ${git_repo}"
-        return
-    fi
-    
-    git init "${git_repo}"
-    
-    # Configure Git
-    cd "${git_repo}"
-    git config user.name "Oxidized"
-    git config user.email "oxidized@example.com"
-    
-    # Create initial commit
-    echo "# Network Device Configurations" > README.md
-    echo "" >> README.md
-    echo "This repository contains automated backups of network device configurations." >> README.md
-    echo "Managed by Oxidized." >> README.md
-    
-    git add README.md
-    git commit -m "Initial commit"
-    
-    log_success "Initialized Git repository: ${git_repo}"
-    cd - > /dev/null
+  log_step "Initializing Git repository"
+
+  local git_repo="${OXIDIZED_ROOT}/repo"
+
+  if [[ -d "${git_repo}/.git" ]]; then
+    log_info "Git repository already initialized: ${git_repo}"
+    return
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would initialize Git repo: ${git_repo}"
+    return
+  fi
+
+  # Initialize as oxidized user
+  sudo -u "${OXIDIZED_USER}" git init "${git_repo}"
+
+  # Configure Git (use variables from .env)
+  cd "${git_repo}"
+  sudo -u "${OXIDIZED_USER}" git config user.name "${GIT_USER_NAME:-Oxidized}"
+  sudo -u "${OXIDIZED_USER}" git config user.email "${GIT_USER_EMAIL:-oxidized@example.com}"
+
+  # Create initial commit
+  sudo -u "${OXIDIZED_USER}" tee README.md > /dev/null << EOF
+# Network Device Configurations
+
+This repository contains automated backups of network device configurations.
+Managed by Oxidized.
+EOF
+
+  sudo -u "${OXIDIZED_USER}" git add README.md
+  sudo -u "${OXIDIZED_USER}" git commit -m "Initial commit"
+
+  # Set proper permissions
+  chown -R "${OXIDIZED_UID}:${OXIDIZED_GID}" "${git_repo}"
+  find "${git_repo}" -type d -exec chmod 750 {} \;
+  find "${git_repo}" -type f -exec chmod 640 {} \;
+
+  log_success "Initialized Git repository: ${git_repo}"
+  cd - > /dev/null
 }
 
 # Install Quadlet
 install_quadlet() {
-    log_step "Installing Quadlet configuration"
-    
-    local src_quadlet="${REPO_ROOT}/containers/quadlet/oxidized.container"
-    local dst_quadlet="${QUADLET_DIR}/oxidized.container"
-    
-    if [[ ! -f "${src_quadlet}" ]]; then
-        log_error "Source Quadlet not found: ${src_quadlet}"
-        exit ${EXIT_GENERAL_FAILURE}
-    fi
-    
-    if [[ ! -d "${QUADLET_DIR}" ]]; then
-        if [[ "${DRY_RUN}" == "true" ]]; then
-            log_info "[DRY-RUN] Would create: ${QUADLET_DIR}"
-        else
-            mkdir -p "${QUADLET_DIR}"
-            log_success "Created: ${QUADLET_DIR}"
-        fi
-    fi
-    
-    if [[ -f "${dst_quadlet}" ]]; then
-        log_warn "Quadlet already exists: ${dst_quadlet}"
-        log_warn "Backing up to ${dst_quadlet}.backup"
-        if [[ "${DRY_RUN}" == "false" ]]; then
-            cp "${dst_quadlet}" "${dst_quadlet}.backup.$(date +%Y%m%d_%H%M%S)"
-        fi
-    fi
-    
+  log_step "Installing Quadlet configuration"
+
+  local template_file="${REPO_ROOT}/containers/quadlet/oxidized.container.template"
+  local dst_quadlet="${QUADLET_DIR}/oxidized.container"
+
+  if [[ ! -f "${template_file}" ]]; then
+    log_error "Quadlet template not found: ${template_file}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  if [[ ! -d "${QUADLET_DIR}" ]]; then
     if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would copy: ${src_quadlet} -> ${dst_quadlet}"
+      log_info "[DRY-RUN] Would create: ${QUADLET_DIR}"
     else
-        cp "${src_quadlet}" "${dst_quadlet}"
-        chmod 644 "${dst_quadlet}"
-        log_success "Installed: ${dst_quadlet}"
+      mkdir -p "${QUADLET_DIR}"
+      log_success "Created: ${QUADLET_DIR}"
     fi
+  fi
+
+  if [[ -f "${dst_quadlet}" ]]; then
+    log_warn "Quadlet already exists: ${dst_quadlet}"
+    log_warn "Backing up to ${dst_quadlet}.backup"
+    if [[ "${DRY_RUN}" == "false" ]]; then
+      cp "${dst_quadlet}" "${dst_quadlet}.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would generate Quadlet from template"
+    return
+  fi
+
+  # Generate Quadlet from template with environment variable substitution
+  log_info "Generating Quadlet from template..."
+
+  # Determine port publishing based on configuration
+  local port_publish=""
+  if [[ "${OXIDIZED_WEB_UI:-false}" == "true" ]] || [[ -n "${OXIDIZED_API_PORT:-}" ]]; then
+    port_publish="PublishPort=${OXIDIZED_API_PORT:-8888}:8888"
+  else
+    port_publish="# PublishPort disabled (API/Web UI not exposed)"
+  fi
+
+  # Substitute variables in template
+  sed \
+    -e "s|{{OXIDIZED_IMAGE}}|${OXIDIZED_IMAGE}|g" \
+    -e "s|{{CONTAINER_NAME}}|${CONTAINER_NAME}|g" \
+    -e "s|{{PODMAN_NETWORK}}|${PODMAN_NETWORK}|g" \
+    -e "s|{{OXIDIZED_UID}}|${OXIDIZED_UID}|g" \
+    -e "s|{{OXIDIZED_GID}}|${OXIDIZED_GID}|g" \
+    -e "s|{{OXIDIZED_ROOT}}|${OXIDIZED_ROOT}|g" \
+    -e "s|{{MOUNT_CONFIG}}|${MOUNT_CONFIG:-/home/oxidized/.config/oxidized}|g" \
+    -e "s|{{MOUNT_SSH}}|${MOUNT_SSH:-/home/oxidized/.ssh}|g" \
+    -e "s|{{MOUNT_DATA}}|${MOUNT_DATA:-/home/oxidized/.config/oxidized/data}|g" \
+    -e "s|{{MOUNT_OUTPUT}}|${MOUNT_OUTPUT:-/home/oxidized/.config/oxidized/output}|g" \
+    -e "s|{{MOUNT_REPO}}|${MOUNT_REPO:-/home/oxidized/.config/oxidized/repo}|g" \
+    -e "s|{{SELINUX_MOUNT_OPTION}}|${SELINUX_MOUNT_OPTION:-:Z}|g" \
+    -e "s|{{TZ}}|${TZ:-UTC}|g" \
+    -e "s|{{PORT_PUBLISH}}|${port_publish}|g" \
+    -e "s|{{MEMORY_LIMIT}}|${MEMORY_LIMIT:-1G}|g" \
+    -e "s|{{CPU_QUOTA}}|${CPU_QUOTA:-100%}|g" \
+    "${template_file}" > "${dst_quadlet}"
+
+  chmod 644 "${dst_quadlet}"
+  log_success "Generated and installed: ${dst_quadlet}"
 }
 
 # Install logrotate configuration
 install_logrotate() {
-    log_step "Installing logrotate configuration"
-    
-    local src_logrotate="${REPO_ROOT}/config/logrotate/oxidized"
-    local dst_logrotate="${LOGROTATE_DIR}/oxidized"
-    
-    if [[ ! -f "${src_logrotate}" ]]; then
-        log_error "Source logrotate config not found: ${src_logrotate}"
-        exit ${EXIT_GENERAL_FAILURE}
-    fi
-    
-    if [[ -f "${dst_logrotate}" ]]; then
-        log_info "Logrotate config already exists: ${dst_logrotate}"
-    fi
-    
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would copy: ${src_logrotate} -> ${dst_logrotate}"
+  log_step "Installing logrotate configuration"
+
+  local src_logrotate="${REPO_ROOT}/config/logrotate/oxidized"
+  local dst_logrotate="${LOGROTATE_DIR}/oxidized"
+
+  if [[ ! -f "${src_logrotate}" ]]; then
+    log_error "Source logrotate config not found: ${src_logrotate}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  if [[ -f "${dst_logrotate}" ]]; then
+    log_info "Logrotate config already exists: ${dst_logrotate}"
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would copy: ${src_logrotate} -> ${dst_logrotate}"
+  else
+    cp "${src_logrotate}" "${dst_logrotate}"
+    chmod 644 "${dst_logrotate}"
+    log_success "Installed: ${dst_logrotate}"
+
+    # Test logrotate configuration
+    if logrotate -d "${dst_logrotate}" &> /dev/null; then
+      log_success "Logrotate configuration is valid"
     else
-        cp "${src_logrotate}" "${dst_logrotate}"
-        chmod 644 "${dst_logrotate}"
-        log_success "Installed: ${dst_logrotate}"
-        
-        # Test logrotate configuration
-        if logrotate -d "${dst_logrotate}" &> /dev/null; then
-            log_success "Logrotate configuration is valid"
-        else
-            log_warn "Logrotate configuration validation failed (non-fatal)"
-        fi
+      log_warn "Logrotate configuration validation failed (non-fatal)"
     fi
+  fi
 }
 
 # Pull container image
 pull_image() {
-    log_step "Pulling container image"
-    
-    local image_name
-    image_name=$(grep "^Image=" "${QUADLET_DIR}/oxidized.container" 2>/dev/null | cut -d= -f2 || echo "docker.io/oxidized/oxidized:0.30.1")
-    
-    log_info "Image: ${image_name}"
-    
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would pull: ${image_name}"
-        return
-    fi
-    
-    if podman pull "${image_name}"; then
-        log_success "Pulled image: ${image_name}"
-    else
-        log_error "Failed to pull image: ${image_name}"
-        log_error "Check network connectivity and image name"
-        exit ${EXIT_GENERAL_FAILURE}
-    fi
+  log_step "Pulling container image"
+
+  log_info "Image: ${OXIDIZED_IMAGE}"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would pull: ${OXIDIZED_IMAGE}"
+    return
+  fi
+
+  if podman pull "${OXIDIZED_IMAGE}"; then
+    log_success "Pulled image: ${OXIDIZED_IMAGE}"
+  else
+    log_error "Failed to pull image: ${OXIDIZED_IMAGE}"
+    log_error "Check network connectivity and image name in .env"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
 }
 
 # Enable and start service
 start_service() {
-    log_step "Starting Oxidized service"
-    
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would run: systemctl daemon-reload"
-        log_info "[DRY-RUN] Would run: systemctl enable --now oxidized.service"
-        return
-    fi
-    
-    # Reload systemd
-    systemctl daemon-reload
-    log_success "Reloaded systemd daemon"
-    
-    # Enable service
-    systemctl enable oxidized.service
-    log_success "Enabled oxidized.service"
-    
-    # Start service
-    if systemctl start oxidized.service; then
-        log_success "Started oxidized.service"
-    else
-        log_error "Failed to start oxidized.service"
-        log_error "Check status with: systemctl status oxidized.service"
-        log_error "Check logs with: journalctl -u oxidized.service -n 50"
-        exit ${EXIT_GENERAL_FAILURE}
-    fi
-    
-    # Wait a moment for service to initialize
-    sleep 3
+  log_step "Starting Oxidized service"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would run: systemctl daemon-reload"
+    log_info "[DRY-RUN] Would run: systemctl enable --now oxidized.service"
+    return
+  fi
+
+  # Reload systemd
+  systemctl daemon-reload
+  log_success "Reloaded systemd daemon"
+
+  # Enable service
+  systemctl enable oxidized.service
+  log_success "Enabled oxidized.service"
+
+  # Start service
+  if systemctl start oxidized.service; then
+    log_success "Started oxidized.service"
+  else
+    log_error "Failed to start oxidized.service"
+    log_error "Check status with: systemctl status oxidized.service"
+    log_error "Check logs with: journalctl -u oxidized.service -n 50"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Wait a moment for service to initialize
+  sleep 3
 }
 
 # Verify deployment
 verify_deployment() {
-    log_step "Verifying deployment"
-    
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would verify deployment"
-        return
-    fi
-    
-    # Check service status
-    if systemctl is-active --quiet oxidized.service; then
-        log_success "Service is active"
+  log_step "Verifying deployment"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would verify deployment"
+    return
+  fi
+
+  # Check service status
+  if systemctl is-active --quiet oxidized.service; then
+    log_success "Service is active"
+  else
+    log_error "Service is not active"
+    systemctl status oxidized.service || true
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Check if container is running
+  if podman ps --format "{{.Names}}" | grep -q "^oxidized$"; then
+    log_success "Container is running"
+  else
+    log_error "Container is not running"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Check API (with retry)
+  local max_attempts=10
+  local attempt=1
+
+  log_info "Waiting for API to be ready..."
+
+  while [[ ${attempt} -le ${max_attempts} ]]; do
+    if curl -sf http://localhost:8888/ > /dev/null 2>&1; then
+      log_success "API is responding"
+      break
     else
-        log_error "Service is not active"
-        systemctl status oxidized.service || true
+      if [[ ${attempt} -eq ${max_attempts} ]]; then
+        log_error "API is not responding after ${max_attempts} attempts"
+        log_error "Check logs with: podman logs oxidized"
         exit ${EXIT_GENERAL_FAILURE}
+      fi
+      log_info "Waiting for API... (attempt ${attempt}/${max_attempts})"
+      sleep 3
+      ((attempt++))
     fi
-    
-    # Check if container is running
-    if podman ps --format "{{.Names}}" | grep -q "^oxidized$"; then
-        log_success "Container is running"
-    else
-        log_error "Container is not running"
-        exit ${EXIT_GENERAL_FAILURE}
-    fi
-    
-    # Check API (with retry)
-    local max_attempts=10
-    local attempt=1
-    
-    log_info "Waiting for API to be ready..."
-    
-    while [[ ${attempt} -le ${max_attempts} ]]; do
-        if curl -sf http://localhost:8888/ > /dev/null 2>&1; then
-            log_success "API is responding"
-            break
-        else
-            if [[ ${attempt} -eq ${max_attempts} ]]; then
-                log_error "API is not responding after ${max_attempts} attempts"
-                log_error "Check logs with: podman logs oxidized"
-                exit ${EXIT_GENERAL_FAILURE}
-            fi
-            log_info "Waiting for API... (attempt ${attempt}/${max_attempts})"
-            sleep 3
-            ((attempt++))
-        fi
-    done
-    
-    # Check Git repository
-    if [[ -d "${OXIDIZED_ROOT}/git/configs.git/.git" ]]; then
-        log_success "Git repository initialized"
-    else
-        log_warn "Git repository not found (non-fatal)"
-    fi
-    
-    log_success "Deployment verification complete"
+  done
+
+  # Check Git repository
+  if [[ -d "${OXIDIZED_ROOT}/repo/.git" ]]; then
+    log_success "Git repository initialized"
+  else
+    log_warn "Git repository not found (non-fatal)"
+  fi
+
+  log_success "Deployment verification complete"
 }
 
 # Show next steps
 show_next_steps() {
-    log_step "Deployment Complete!"
-    
-    cat <<EOF
+  log_step "Deployment Complete!"
+
+  cat << EOF
 
 ${COLOR_GREEN}✅ Oxidized has been successfully deployed!${COLOR_RESET}
 
+${COLOR_BLUE}Deployment Details:${COLOR_RESET}
+  User/Group: ${OXIDIZED_USER}:${OXIDIZED_GROUP} (UID/GID: ${OXIDIZED_UID}/${OXIDIZED_GID})
+  Data Directory: ${OXIDIZED_ROOT}
+  Network: ${PODMAN_NETWORK}
+  Security: Non-root container, read-only rootfs, all capabilities dropped
+
 ${COLOR_BLUE}Next Steps:${COLOR_RESET}
 
-1. ${COLOR_YELLOW}Configure device inventory:${COLOR_RESET}
-   sudo vim ${OXIDIZED_ROOT}/inventory/devices.csv
+1. ${COLOR_YELLOW}Configure device inventory (router.db):${COLOR_RESET}
+   sudo vim ${OXIDIZED_ROOT}/config/router.db
+   Format: name,ip,model,group (one device per line)
 
 2. ${COLOR_YELLOW}Verify device credentials:${COLOR_RESET}
    sudo vim ${OXIDIZED_ROOT}/config/config
+   Update username/password for your devices
 
-3. ${COLOR_YELLOW}Check service status:${COLOR_RESET}
+3. ${COLOR_YELLOW}Add SSH keys (if needed):${COLOR_RESET}
+   sudo cp ~/.ssh/id_rsa ${OXIDIZED_ROOT}/ssh/
+   sudo chown ${OXIDIZED_UID}:${OXIDIZED_GID} ${OXIDIZED_ROOT}/ssh/id_rsa
+   sudo chmod 600 ${OXIDIZED_ROOT}/ssh/id_rsa
+
+4. ${COLOR_YELLOW}Check service status:${COLOR_RESET}
    sudo systemctl status oxidized.service
 
-4. ${COLOR_YELLOW}View container logs:${COLOR_RESET}
+5. ${COLOR_YELLOW}View container logs:${COLOR_RESET}
    podman logs -f oxidized
 
-5. ${COLOR_YELLOW}Access Web UI:${COLOR_RESET}
-   http://$(hostname -f 2>/dev/null || hostname):8888
-
-6. ${COLOR_YELLOW}Check API:${COLOR_RESET}
-   curl http://localhost:8888/nodes.json | jq '.'
-
-7. ${COLOR_YELLOW}Run health check:${COLOR_RESET}
+6. ${COLOR_YELLOW}Run health check:${COLOR_RESET}
    sudo ${SCRIPT_DIR}/health-check.sh
+
+${COLOR_BLUE}Data Locations:${COLOR_RESET}
+  Configuration: ${OXIDIZED_ROOT}/config/
+  Device List:   ${OXIDIZED_ROOT}/config/router.db
+  SSH Keys:      ${OXIDIZED_ROOT}/ssh/
+  Git Backups:   ${OXIDIZED_ROOT}/repo/
+  Output:        ${OXIDIZED_ROOT}/output/
 
 ${COLOR_BLUE}Useful Commands:${COLOR_RESET}
   systemctl status oxidized.service    # Check service status
   podman logs oxidized                 # View container logs
   podman restart oxidized              # Restart container
+  podman network inspect ${PODMAN_NETWORK}  # View network details
+
+${COLOR_BLUE}Troubleshooting:${COLOR_RESET}
+  If permission errors occur:
+    - Check file ownership: ls -la ${OXIDIZED_ROOT}
+    - Verify UID/GID: id ${OXIDIZED_USER}
+    - Check SELinux contexts: ls -laZ ${OXIDIZED_ROOT}
 
 ${COLOR_BLUE}Documentation:${COLOR_RESET}
   ${REPO_ROOT}/docs/INSTALL.md         # Installation guide
@@ -553,60 +798,65 @@ EOF
 
 # Main function
 main() {
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -d|--dry-run)
-                DRY_RUN=true
-                shift
-                ;;
-            -s|--skip-credentials)
-                SKIP_CREDENTIALS=true
-                shift
-                ;;
-            -v|--verbose)
-                VERBOSE=true
-                set -x
-                shift
-                ;;
-            -h|--help)
-                usage
-                exit ${EXIT_SUCCESS}
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                usage
-                exit ${EXIT_INVALID_USAGE}
-                ;;
-        esac
-    done
-    
-    # Banner
-    echo ""
-    echo "========================================"
-    echo "  Oxidized Deployment Script"
-    echo "========================================"
-    echo ""
-    
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_warn "DRY-RUN MODE: No changes will be made"
-    fi
-    
-    # Execute deployment steps
-    check_root
-    check_prerequisites
-    create_directories
-    deploy_config
-    configure_credentials
-    initialize_git
-    install_quadlet
-    install_logrotate
-    pull_image
-    start_service
-    verify_deployment
-    show_next_steps
-    
-    exit ${EXIT_SUCCESS}
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -d | --dry-run)
+        DRY_RUN=true
+        shift
+        ;;
+      -s | --skip-credentials)
+        SKIP_CREDENTIALS=true
+        shift
+        ;;
+      -v | --verbose)
+        # shellcheck disable=SC2034  # VERBOSE used for future enhancements
+        VERBOSE=true
+        set -x
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit ${EXIT_SUCCESS}
+        ;;
+      *)
+        log_error "Unknown option: $1"
+        usage
+        exit ${EXIT_INVALID_USAGE}
+        ;;
+    esac
+  done
+
+  # Banner
+  echo ""
+  echo "========================================"
+  echo "  Oxidized Deployment Script"
+  echo "========================================"
+  echo ""
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_warn "DRY-RUN MODE: No changes will be made"
+  fi
+
+  # Execute deployment steps
+  check_root
+  load_env
+  validate_env
+  check_prerequisites
+  create_user
+  create_directories
+  deploy_config
+  configure_credentials
+  initialize_git
+  create_network
+  install_quadlet
+  install_logrotate
+  pull_image
+  start_service
+  verify_deployment
+  show_next_steps
+
+  exit ${EXIT_SUCCESS}
 }
 
 # Run main function

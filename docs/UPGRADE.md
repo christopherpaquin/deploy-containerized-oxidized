@@ -61,7 +61,7 @@ curl -s https://registry.hub.docker.com/v2/repositories/oxidized/oxidized/tags \
 
 Check the Oxidized changelog for breaking changes:
 
-- GitHub: https://github.com/yggdrasil-network/oxidized/releases
+- GitHub: <https://github.com/yggdrasil-network/oxidized/releases>
 - Look for:
   - Configuration changes
   - Model updates
@@ -76,13 +76,13 @@ Check the Oxidized changelog for breaking changes:
 # Create backup directory
 sudo mkdir -p /var/backups/oxidized/$(date +%Y%m%d)
 
-# Backup Git repository
+# Backup Git repository (adjust path if you customized OXIDIZED_ROOT in .env)
 sudo tar -czf /var/backups/oxidized/$(date +%Y%m%d)/oxidized-git.tar.gz \
-    -C /srv/oxidized git/
+    -C /var/lib/oxidized repo/
 
 # Backup configuration files
 sudo tar -czf /var/backups/oxidized/$(date +%Y%m%d)/oxidized-config.tar.gz \
-    -C /srv/oxidized config/ inventory/
+    -C /var/lib/oxidized config/
 
 # Backup Quadlet file
 sudo cp /etc/containers/systemd/oxidized.container \
@@ -207,8 +207,8 @@ podman logs -f oxidized
 # Wait for first backup cycle (up to 1 hour)
 # Monitor for errors in logs
 
-# Check Git commits
-cd /srv/oxidized/git/configs.git
+# Check Git commits (adjust path if you customized OXIDIZED_ROOT in .env)
+cd /var/lib/oxidized/repo
 sudo git log --oneline -10
 
 # Verify node status
@@ -224,9 +224,9 @@ podman inspect oxidized | jq -r '.[0].ImageName' > /tmp/oxidized-version-after.t
 # Compare versions
 diff /tmp/oxidized-version-before.txt /tmp/oxidized-version-after.txt
 
-# Update version tracking
+# Update version tracking (adjust path if you customized OXIDIZED_ROOT in .env)
 echo "$(date): Upgraded from 0.30.1 to 0.31.0" | \
-    sudo tee -a /srv/oxidized/UPGRADE_HISTORY.log
+    sudo tee -a /var/lib/oxidized/UPGRADE_HISTORY.log
 ```
 
 ---
@@ -266,9 +266,9 @@ sudo systemctl stop oxidized.service
 sudo cp /var/backups/oxidized/$(date +%Y%m%d)/oxidized.container.backup \
     /etc/containers/systemd/oxidized.container
 
-# Restore configuration (if needed)
+# Restore configuration (if needed - adjust path if you customized OXIDIZED_ROOT)
 sudo tar -xzf /var/backups/oxidized/$(date +%Y%m%d)/oxidized-config.tar.gz \
-    -C /srv/oxidized
+    -C /var/lib/oxidized
 
 # Reload and restart
 sudo systemctl daemon-reload
@@ -287,10 +287,10 @@ If Git repository is corrupted:
 # Stop service
 sudo systemctl stop oxidized.service
 
-# Restore Git repository
-sudo rm -rf /srv/oxidized/git/configs.git
+# Restore Git repository (adjust paths if you customized OXIDIZED_ROOT in .env)
+sudo rm -rf /var/lib/oxidized/repo
 sudo tar -xzf /var/backups/oxidized/$(date +%Y%m%d)/oxidized-git.tar.gz \
-    -C /srv/oxidized
+    -C /var/lib/oxidized
 
 # Restart service
 sudo systemctl start oxidized.service
@@ -305,12 +305,12 @@ sudo systemctl start oxidized.service
 Before upgrading production, test in a separate environment:
 
 ```bash
-# Create test directory
-sudo mkdir -p /srv/oxidized-test
+# Create test directory (adjust path based on your OXIDIZED_ROOT from .env)
+sudo mkdir -p /var/lib/oxidized-test
 
 # Copy configuration
-sudo cp -r /srv/oxidized/config /srv/oxidized-test/
-sudo cp -r /srv/oxidized/inventory /srv/oxidized-test/
+sudo cp -r /var/lib/oxidized/config /var/lib/oxidized-test/
+sudo cp -r /var/lib/oxidized/ssh /var/lib/oxidized-test/
 
 # Create test Quadlet
 sudo cp /etc/containers/systemd/oxidized.container \
@@ -319,7 +319,7 @@ sudo cp /etc/containers/systemd/oxidized.container \
 # Modify test Quadlet:
 # - Change container name to "oxidized-test"
 # - Change port to 8889
-# - Change volumes to /srv/oxidized-test/*
+# - Change volumes to /var/lib/oxidized-test/*
 # - Use new version
 
 # Start test instance
@@ -365,11 +365,11 @@ sudo rm /etc/containers/systemd/oxidized-test.container
 
 ### Upgrade Log
 
-Keep a log of upgrades in `/srv/oxidized/UPGRADE_HISTORY.log`:
+Keep a log of upgrades (adjust path if you customized OXIDIZED_ROOT in `.env`):
 
 ```bash
 # Create upgrade log
-sudo tee -a /srv/oxidized/UPGRADE_HISTORY.log <<EOF
+sudo tee -a /var/lib/oxidized/UPGRADE_HISTORY.log <<EOF
 $(date): Initial deployment - version 0.30.1
 EOF
 
@@ -470,11 +470,11 @@ BACKUP_DIR="/var/backups/oxidized/$(date +%Y%m%d_%H%M%S)"
 
 echo "🔄 Upgrading Oxidized from ${OLD_VERSION} to ${NEW_VERSION}"
 
-# Backup
+# Backup (adjust paths if you customized OXIDIZED_ROOT in .env)
 echo "📦 Creating backup..."
 mkdir -p "${BACKUP_DIR}"
-tar -czf "${BACKUP_DIR}/oxidized-git.tar.gz" -C /srv/oxidized git/
-tar -czf "${BACKUP_DIR}/oxidized-config.tar.gz" -C /srv/oxidized config/ inventory/
+tar -czf "${BACKUP_DIR}/oxidized-git.tar.gz" -C /var/lib/oxidized repo/
+tar -czf "${BACKUP_DIR}/oxidized-config.tar.gz" -C /var/lib/oxidized config/
 cp /etc/containers/systemd/oxidized.container "${BACKUP_DIR}/oxidized.container.backup"
 
 # Pull new image
@@ -514,9 +514,9 @@ echo "📚 Backup location: ${BACKUP_DIR}"
 
 ## 🆘 Need Help?
 
-- **Oxidized Documentation**: https://github.com/yggdrasil-network/oxidized
-- **Docker Hub**: https://hub.docker.com/r/oxidized/oxidized
-- **GitHub Issues**: https://github.com/yggdrasil-network/oxidized/issues
+- Oxidized Documentation: <https://github.com/yggdrasil-network/oxidized>
+- Docker Hub: <https://hub.docker.com/r/oxidized/oxidized>
+- GitHub Issues: <https://github.com/yggdrasil-network/oxidized/issues>
 
 ---
 

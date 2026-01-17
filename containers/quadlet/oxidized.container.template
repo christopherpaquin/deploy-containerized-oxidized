@@ -1,0 +1,67 @@
+# Podman Quadlet configuration for Oxidized
+# This file is generated from template during deployment
+# DO NOT EDIT MANUALLY - edit .env and re-run deploy.sh
+#
+# Security model: Runs as dedicated oxidized user with enhanced security constraints
+
+[Unit]
+Description=Oxidized Network Configuration Backup Service
+Documentation=https://github.com/yggdrasil-network/oxidized
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Container image (pinned version from .env)
+Image={{OXIDIZED_IMAGE}}
+
+# Container name
+ContainerName={{CONTAINER_NAME}}
+
+# Network: Dedicated bridge network
+Network={{PODMAN_NETWORK}}
+
+# Security: Run as dedicated non-root user
+User={{OXIDIZED_UID}}:{{OXIDIZED_GID}}
+
+# Security: Read-only root filesystem
+ReadOnly=true
+
+# Security: Drop all capabilities
+DropCapability=ALL
+
+# Security: Prevent privilege escalation
+SecurityLabelDisable=false
+NoNewPrivileges=true
+
+# Writable tmpfs for runtime needs
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+Tmpfs=/run:rw,noexec,nosuid,size=32m
+
+# Persistent storage with SELinux relabeling
+Volume={{OXIDIZED_ROOT}}/config:{{MOUNT_CONFIG}}{{SELINUX_MOUNT_OPTION}}
+Volume={{OXIDIZED_ROOT}}/ssh:{{MOUNT_SSH}}{{SELINUX_MOUNT_OPTION}},ro
+Volume={{OXIDIZED_ROOT}}/data:{{MOUNT_DATA}}{{SELINUX_MOUNT_OPTION}}
+Volume={{OXIDIZED_ROOT}}/output:{{MOUNT_OUTPUT}}{{SELINUX_MOUNT_OPTION}}
+Volume={{OXIDIZED_ROOT}}/repo:{{MOUNT_REPO}}{{SELINUX_MOUNT_OPTION}}
+
+# Environment variables
+Environment=TZ={{TZ}}
+Environment=HOME=/home/oxidized
+
+# Port publishing (if needed)
+{{PORT_PUBLISH}}
+
+[Service]
+# Restart policy for production reliability
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# Resource limits
+MemoryLimit={{MEMORY_LIMIT}}
+CPUQuota={{CPU_QUOTA}}
+
+[Install]
+# Enable service to start on boot
+WantedBy=multi-user.target default.target

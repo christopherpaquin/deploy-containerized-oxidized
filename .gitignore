@@ -13,12 +13,13 @@
 # Standard environment files
 .env
 .env.*
-!.env.example
+
+# Allow non-hidden template (env.example, not .env.example)
+!env.example
 
 # Alternative env naming (supported, but discouraged in favor of .env)
 vars.env
 vars.env.*
-!vars.env.example
 
 # Generic secrets
 secrets.*

@@ -81,7 +81,7 @@ For **~100 devices** with **hourly polling**:
 
 - **CPU**: 2 cores
 - **RAM**: 2 GB (4 GB recommended)
-- **Disk**: 10 GB free space in `/srv/oxidized`
+- **Disk**: 10 GB free space in `/var/lib/oxidized` (configurable via `.env`)
 - **Network**: Stable connectivity to network devices
 
 ### Pre-Installation Checklist
@@ -140,7 +140,8 @@ SELINUX=enforcing
 
 ### SELinux Context
 
-The Quadlet configuration applies SELinux context automatically using `:Z` volume flags. No manual `chcon` or `semanage` commands are required.
+The Quadlet configuration applies SELinux context automatically using `:Z` volume flags.
+No manual `chcon` or `semanage` commands are required.
 
 ---
 
@@ -203,7 +204,8 @@ This deployment uses **rootful Podman** to:
 
 ### File System Permissions
 
-The host directories (`/srv/oxidized/*`) should be owned by `root:root` with appropriate permissions. The container runs as UID 30000 inside, but SELinux context (`:Z`) ensures proper access.
+The host directories (`/srv/oxidized/*`) should be owned by `root:root` with appropriate permissions.
+The container runs as UID 30000 inside, but SELinux context (`:Z`) ensures proper access.
 
 ---
 

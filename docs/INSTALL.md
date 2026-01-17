@@ -29,7 +29,26 @@ Before proceeding, ensure you have completed **[PREREQUISITES.md](PREREQUISITES.
 - [ ] SELinux enforcing
 - [ ] Required packages installed
 - [ ] Firewall configured
-- [ ] 10 GB free space in `/srv`
+- [ ] 10 GB free space in `/var/lib`
+- [ ] **Created `.env` file from `env.example`**
+
+### Create Configuration File
+
+```bash
+# Copy template
+cp env.example .env
+
+# Edit configuration
+vim .env
+
+# Secure the file
+chmod 600 .env
+```
+
+**⚠️ Important**: Update at least these values in `.env`:
+- `OXIDIZED_PASSWORD` - Change from default!
+- `OXIDIZED_USERNAME` - Your device login username
+- Review all other settings for your environment
 
 ---
 
@@ -300,8 +319,10 @@ sudo systemctl status oxidized.service
 podman ps
 
 # Expected output should show oxidized container running
-# CONTAINER ID  IMAGE                              COMMAND  CREATED        STATUS        PORTS                   NAMES
-# abc123def456  docker.io/oxidized/oxidized:0.30.1          2 minutes ago  Up 2 minutes  0.0.0.0:8888->8888/tcp  oxidized
+# CONTAINER ID  IMAGE                              COMMAND  CREATED
+# abc123def456  docker.io/oxidized/oxidized:0.30.1          2 minutes ago
+# STATUS        PORTS                   NAMES
+# Up 2 minutes  0.0.0.0:8888->8888/tcp  oxidized
 ```
 
 #### 7.2 Check Container Logs
@@ -333,7 +354,7 @@ curl -s http://localhost:8888/nodes.json | jq '.'
 
 Open a web browser and navigate to:
 
-```
+```text
 http://<your-server-ip>:8888
 ```
 

@@ -6,7 +6,8 @@
 [![Podman](https://img.shields.io/badge/Podman-4.x+-purple.svg)](https://podman.io/)
 [![SELinux](https://img.shields.io/badge/SELinux-Enforcing-green.svg)](https://github.com/SELinuxProject)
 
-Production-grade, containerized deployment of [Oxidized](https://github.com/yggdrasil-network/oxidized) for automated network device configuration backup and versioning using **Podman Quadlets** and **systemd** on RHEL.
+Production-grade, containerized deployment of [Oxidized](https://github.com/yggdrasil-network/oxidized)
+for automated network device configuration backup and versioning using **Podman Quadlets** and **systemd** on RHEL.
 
 ---
 
@@ -33,7 +34,8 @@ Production-grade, containerized deployment of [Oxidized](https://github.com/yggd
 
 ## 🎯 Overview
 
-This repository provides a **complete deployment framework** for running Oxidized as a containerized service on RHEL 10/9 using modern container orchestration practices.
+This repository provides a **complete deployment framework** for running Oxidized as a containerized service
+on RHEL 10/9 using modern container orchestration practices.
 
 ### What is Oxidized?
 
@@ -93,7 +95,7 @@ Oxidized is a network device configuration backup tool that:
 
 ### High-Level Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                      RHEL 10 Host                           │
 │                                                             │
@@ -150,7 +152,7 @@ Oxidized is a network device configuration backup tool that:
 
 ### Component Relationships
 
-```
+```text
 ┌────────────┐    reads    ┌──────────────┐    polls    ┌──────────┐
 │ inventory  │────────────▶│   Oxidized   │────────────▶│ Devices  │
 │ (CSV file) │             │   Service    │             └──────────┘
@@ -222,14 +224,25 @@ For **~100 devices** with **hourly polling**:
 git clone https://github.com/yourusername/deploy-containerized-oxidized.git
 cd deploy-containerized-oxidized
 
-# 2. Run deployment script
+# 2. Create configuration file from template
+cp env.example .env
+chmod 600 .env
+
+# 3. Edit configuration (IMPORTANT: Update credentials!)
+vim .env
+
+# 4. Validate configuration
+./scripts/validate-env.sh
+
+# 5. Run deployment script
 sudo ./scripts/deploy.sh
 
-# 3. Follow prompts to configure credentials
-
-# 4. Verify deployment
+# 6. Verify deployment
 sudo ./scripts/health-check.sh
 ```
+
+**Important**: The `.env` file contains sensitive information including device credentials.
+Never commit this file to Git (it's already in `.gitignore`).
 
 ### Manual Deployment
 
@@ -330,9 +343,43 @@ Includes:
 
 ## ⚙️ Configuration
 
+### Environment Configuration (.env)
+
+**Location**: `.env` (in repository root)
+
+**⚠️ SECURITY**: This file contains sensitive information (credentials, IP addresses).
+- Copy from `env.example`: `cp env.example .env`
+- Restrict permissions: `chmod 600 .env`
+- Never commit to Git (already in `.gitignore`)
+
+**Key Configuration Variables**:
+
+```bash
+# System user
+OXIDIZED_UID=2000
+OXIDIZED_GID=2000
+
+# Data directory
+OXIDIZED_ROOT="/var/lib/oxidized"
+
+# Container image (pinned version)
+OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.30.1"
+
+# Device credentials
+OXIDIZED_USERNAME="admin"
+OXIDIZED_PASSWORD="changeme"  # CHANGE THIS!
+
+# Operational settings
+POLL_INTERVAL=3600  # Hourly
+THREADS=30
+TIMEOUT=20
+```
+
+See `env.example` for all available options.
+
 ### Oxidized Configuration
 
-**Location**: `/srv/oxidized/config/config`
+**Location**: `/var/lib/oxidized/config/config` (auto-generated from `.env`)
 
 Key settings:
 
@@ -594,18 +641,19 @@ curl -s http://localhost:8888/nodes.json | jq '
 
 ### Upgrading Oxidized
 
-1. **Backup current state**
-2. **Pull new image**
-3. **Update Quadlet file with new version**
-4. **Reload systemd and restart service**
-5. **Verify upgrade**
+1. Backup current state
+2. Pull new image
+3. Update Quadlet file with new version
+4. Reload systemd and restart service
+5. Verify upgrade
 
 ### Rollback
 
 If issues occur:
-1. **Restore Quadlet file to previous version**
-2. **Restart service**
-3. **Restore backups if needed**
+
+1. Restore Quadlet file to previous version
+2. Restart service
+3. Restore backups if needed
 
 📖 **Full details**: [docs/UPGRADE.md](docs/UPGRADE.md)
 
@@ -730,22 +778,22 @@ sudo systemctl restart oxidized.service
 
 ### Security Best Practices
 
-1. **Credentials Management**
+1. Credentials Management
    - Store credentials securely
    - Use environment variables for sensitive data
    - Consider a secrets manager for production
 
-2. **Network Security**
+2. Network Security
    - Restrict port 8888 to internal network only
    - Use firewall rules
    - Consider VPN for remote access
 
-3. **Access Control**
+3. Access Control
    - Limit SSH access to Oxidized host
    - Use key-based authentication
    - Regular security updates
 
-4. **Monitoring**
+4. Monitoring
    - Monitor for failed backups (may indicate credential issues)
    - Track API access patterns
    - Alert on service downtime
@@ -772,7 +820,10 @@ sudo systemctl restart oxidized.service
 |----------|-------------|
 | **[PREREQUISITES.md](docs/PREREQUISITES.md)** | System requirements and package installation |
 | **[INSTALL.md](docs/INSTALL.md)** | Step-by-step installation guide |
+| **[CONFIGURATION.md](docs/CONFIGURATION.md)** | Detailed `.env` configuration guide |
+| **[ENV-ARCHITECTURE.md](docs/ENV-ARCHITECTURE.md)** | Environment-based configuration architecture |
 | **[UPGRADE.md](docs/UPGRADE.md)** | Version upgrade and rollback procedures |
+| **[SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md)** | Advanced security configurations |
 | **[DECISIONS.md](docs/DECISIONS.md)** | Implementation decisions and rationale |
 | **[requirements.md](docs/requirements.md)** | Project requirements and specifications |
 | **[monitoring/ZABBIX.md](docs/monitoring/ZABBIX.md)** | Zabbix monitoring setup and queries |
@@ -782,6 +833,7 @@ sudo systemctl restart oxidized.service
 | Script | Description |
 |--------|-------------|
 | **[deploy.sh](scripts/deploy.sh)** | Automated deployment with prerequisites checks |
+| **[validate-env.sh](scripts/validate-env.sh)** | Validate `.env` configuration before deployment |
 | **[health-check.sh](scripts/health-check.sh)** | Comprehensive health checks (JSON/Nagios compatible) |
 | **[uninstall.sh](scripts/uninstall.sh)** | Safe uninstallation with data preservation option |
 | **[run-precommit.sh](scripts/run-precommit.sh)** | Pre-commit hooks for code quality |
@@ -821,7 +873,7 @@ This project is licensed under the **Apache License 2.0**.
 
 See [LICENSE](LICENSE) file for details.
 
-```
+```text
 Copyright 2026
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -849,12 +901,12 @@ limitations under the License.
 
 ## 📞 Support
 
-- 📧 **Email**: support@example.com
-- 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/deploy-containerized-oxidized/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/deploy-containerized-oxidized/discussions)
+- 📧 Email: support@example.com
+- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/deploy-containerized-oxidized/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/yourusername/deploy-containerized-oxidized/discussions)
 
 ---
 
-**Made with ❤️ for Network Engineers**
+Made with ❤️ for Network Engineers
 
 *Automated configuration backups shouldn't be complicated.*

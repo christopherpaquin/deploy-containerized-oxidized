@@ -1,37 +1,31 @@
 ---
 # Oxidized Configuration
-# This file should be deployed to: /var/lib/oxidized/config/config
-# Inside the container it will be mounted at: /home/oxidized/.config/oxidized/config
+# Generated from template during deployment
+# DO NOT EDIT MANUALLY - edit .env and re-run deploy.sh
 
 # Username and password for device login
-# SECURITY: These should be set via environment variables in production
-# Set these in the Quadlet file or use a secrets manager
-username: oxidized
-password: oxidized
+username: {{OXIDIZED_USERNAME}}
+password: {{OXIDIZED_PASSWORD}}
 
-# Polling interval in seconds (3600 = hourly)
-interval: 3600
+# Polling interval in seconds
+interval: {{POLL_INTERVAL}}
 
 # Log configuration
-# Logs are written to data directory
 log: /home/oxidized/.config/oxidized/data/oxidized.log
 
-# Debugging (set to true for troubleshooting)
-debug: false
-threads: 30
-timeout: 20
-retries: 3
+# Debugging
+debug: {{DEBUG}}
+threads: {{THREADS}}
+timeout: {{TIMEOUT}}
+retries: {{RETRIES}}
 prompt: !ruby/regexp /^([\w.@-]+[#>]\s?)$/
 next_adds_job: false
 
 # REST API configuration
-# Note: With read-only rootfs and non-root user, binding to port 8888 requires network capability
-# or running with host networking. Adjust as needed.
-# For rootless containers, use port > 1024
-rest: 0.0.0.0:8888
+rest: {{OXIDIZED_API_HOST}}:8888
 
 # Web UI configuration
-web: false
+web: {{OXIDIZED_WEB_UI}}
 
 # Input configuration
 input:
@@ -44,8 +38,8 @@ input:
 output:
   default: git
   git:
-    user: Oxidized
-    email: oxidized@example.com
+    user: {{GIT_USER_NAME}}
+    email: {{GIT_USER_EMAIL}}
     repo: /home/oxidized/.config/oxidized/repo
 
 # Source configuration - CSV router database
@@ -62,7 +56,6 @@ source:
     gpg: false
 
 # Model-specific configurations
-# Add device models as needed
 models: {}
 
 # Group-specific configurations
@@ -79,11 +72,3 @@ crash:
 # Stats configuration
 stats:
   history_size: 10
-
-# Hooks for notifications (optional)
-# Uncomment and configure as needed
-# hooks:
-#   slack:
-#     type: slackdiff
-#     events: [post_store]
-#     url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
