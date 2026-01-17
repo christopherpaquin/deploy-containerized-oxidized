@@ -26,6 +26,11 @@ secrets.*
 *.secret
 *.secrets
 
+# Oxidized inventory (may contain credentials)
+# Template is tracked, but not live files with real data
+router.db
+!inventory/router.db.template
+
 # ---------------------------------------------------------------------------
 # API Keys and Access Tokens (Section 7.1.2.1, 7.1.2.2)
 # ---------------------------------------------------------------------------

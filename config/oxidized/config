@@ -49,16 +49,21 @@ output:
     repo: /home/oxidized/.config/oxidized/repo
 
 # Source configuration - CSV router database
+# Supports two credential modes:
+#   1. Per-device: Specify username/password in router.db (columns 4 & 5)
+#   2. Global: Leave columns 4 & 5 blank, uses global username/password above
 source:
   default: csv
   csv:
     file: /home/oxidized/.config/oxidized/router.db
-    delimiter: ","
+    delimiter: !ruby/regexp /:/
     map:
       name: 0
       ip: 1
       model: 2
       group: 3
+      username: 4
+      password: 5
     gpg: false
 
 # Model-specific configurations

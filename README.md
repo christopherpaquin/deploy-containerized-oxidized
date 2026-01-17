@@ -379,14 +379,14 @@ See `env.example` for all available options.
 
 ### Oxidized Configuration
 
-**Location**: `/var/lib/oxidized/config/config` (auto-generated from `.env`)
+**Location**: `/var/lib/oxidized/config/config` (auto-generated from `.env` and `config/oxidized/config.template`)
 
-Key settings:
+The configuration file is automatically generated during deployment. Key settings:
 
 ```yaml
-# Device credentials
-username: your_username
-password: your_password
+# Global device credentials (can be overridden per-device in router.db)
+username: admin
+password: your_secure_password
 
 # Polling interval (seconds)
 interval: 3600  # 1 hour
@@ -395,33 +395,231 @@ interval: 3600  # 1 hour
 rest: 0.0.0.0:8888
 web: true
 
-# CSV inventory source
+# CSV inventory source (router.db)
 source:
   default: csv
   csv:
-    file: /etc/oxidized/inventory/devices.csv
+    file: /home/oxidized/.config/oxidized/router.db  # Inside container
+    delimiter: !ruby/regexp /:/  # Colon delimiter
+    map:
+      name: 0
+      ip: 1
+      model: 2
+      group: 3
+      username: 4  # Per-device username (optional)
+      password: 5  # Per-device password (optional)
 
-# Git output
+# Git output (version control for configs)
 output:
   default: git
   git:
-    repo: /var/lib/oxidized/configs.git
+    user: Oxidized
+    email: oxidized@example.com
+    repo: /home/oxidized/.config/oxidized/repo  # Inside container
 ```
 
-### Device Inventory
+**Note**: Do not edit the generated config file directly. Instead:
+1. Update variables in `.env`
+2. For advanced settings, edit `config/oxidized/config.template`
+3. Re-run deployment: `sudo ./scripts/deploy.sh`
 
-**Location**: `/srv/oxidized/inventory/devices.csv`
+### Device Inventory (router.db)
 
-**Format**:
+Oxidized uses a CSV-based inventory file (`router.db`) to define which network devices to back up.
 
-```csv
-name,ip,model,group
-core-sw-01,192.168.1.1,ios,core
-router-wan-01,192.168.2.1,ios,wan
-firewall-01,192.168.3.1,asa,security
+#### File Locations
+
+- **Template**: `inventory/router.db.template` (in this repository)
+- **Live file (host)**: `/var/lib/oxidized/config/router.db`
+- **Inside container**: `/home/oxidized/.config/oxidized/router.db`
+
+The live file is automatically mounted into the container via the `/var/lib/oxidized/config` directory mount.
+
+#### Creating the Inventory File
+
+**Step 1**: Copy the template
+
+```bash
+sudo cp inventory/router.db.template /var/lib/oxidized/config/router.db
 ```
 
-**Supported Models**: See [Oxidized Supported Models](https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model)
+**Step 2**: Edit with your devices
+
+```bash
+sudo vim /var/lib/oxidized/config/router.db
+```
+
+**Step 3**: Set correct permissions
+
+```bash
+# CRITICAL for security - file contains credentials
+sudo chown 2000:2000 /var/lib/oxidized/config/router.db
+sudo chmod 600 /var/lib/oxidized/config/router.db
+```
+
+#### File Format
+
+**Format**: Colon-delimited CSV (`:`) with 6 columns
+
+```text
+name:ip:model:group:username:password
+```
+
+**Column Definitions**:
+
+| Column | Index | Description | Example |
+|--------|-------|-------------|---------|
+| `name` | 0 | Unique device identifier/hostname | `core-router01` |
+| `ip` | 1 | IP address or FQDN | `10.1.1.1` or `router.example.com` |
+| `model` | 2 | Device type/model | `ios`, `nxos`, `eos`, `junos` |
+| `group` | 3 | Logical grouping | `core`, `distribution`, `branch` |
+| `username` | 4 | Device login username (or blank for global) | `netadmin` |
+| `password` | 5 | Device login password (or blank for global) | `SecretPass123` |
+
+#### Credential Modes
+
+Oxidized supports three credential authentication modes:
+
+##### Mode 1: Global Credentials (Recommended)
+
+Use the same username/password for all devices:
+
+1. Set credentials in `.env`:
+
+   ```bash
+   OXIDIZED_USERNAME="admin"
+   OXIDIZED_PASSWORD="your_secure_password"
+   ```
+
+2. Leave username/password columns **blank** in `router.db`:
+
+   ```text
+   core-router01:10.1.1.1:ios:core::
+   edge-switch01:10.1.2.1:procurve:distribution::
+   firewall01:10.1.3.1:fortios:firewalls::
+   ```
+
+**Best for**: Homogeneous environments with shared credentials
+
+##### Mode 2: Per-Device Credentials
+
+Specify credentials for each device individually:
+
+```text
+core-router01:10.1.1.1:ios:core:netadmin:CorePass123
+edge-switch01:10.1.2.1:procurve:distribution:switchuser:SwitchPass456
+firewall01:10.1.3.1:fortios:firewalls:fwadmin:FirewallPass789
+```
+
+**Best for**: Heterogeneous environments with different credentials per device
+
+**⚠️ SECURITY WARNING**: Per-device credentials are stored in **plaintext** in `router.db`
+- **MUST** set permissions: `chmod 600 /var/lib/oxidized/config/router.db`
+- **MUST** set ownership: `chown 2000:2000 /var/lib/oxidized/config/router.db`
+- **NEVER** commit `router.db` with real credentials to Git
+
+##### Mode 3: Mixed (Global with Exceptions)
+
+Use global credentials as default, override for specific devices:
+
+1. Set global credentials in `.env`
+2. Specify credentials only for exceptions in `router.db`:
+
+   ```text
+   # Most devices use global credentials (blank columns)
+   core-router01:10.1.1.1:ios:core::
+   edge-switch01:10.1.2.1:procurve:distribution::
+
+   # Special device with different credentials
+   firewall01:10.1.3.1:fortios:firewalls:fwadmin:SpecialPass123
+   ```
+
+#### Supported Models (Common Examples)
+
+| Vendor | Model Code | Description |
+|--------|------------|-------------|
+| Cisco | `ios` | Cisco IOS |
+| Cisco | `iosxr` | Cisco IOS XR |
+| Cisco | `nxos` | Cisco Nexus |
+| Cisco | `asa` | Cisco ASA Firewall |
+| Arista | `eos` | Arista EOS |
+| Juniper | `junos` | Juniper JunOS |
+| HP | `procurve` | HP ProCurve Switches |
+| HP | `comware` | HP Comware |
+| Aruba | `aoscx` | Aruba AOS-CX |
+| Fortinet | `fortios` | FortiGate Firewalls |
+| Palo Alto | `panos` | PAN-OS |
+
+**Full list**: [Oxidized Supported Models](https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model)
+
+#### Example Inventory File
+
+```text
+# Oxidized Router Database
+# Format: name:ip:model:group:username:password
+
+# Core infrastructure (using global credentials)
+core-router01:10.1.1.1:ios:core::
+core-router02:10.1.1.2:ios:core::
+core-switch01:10.1.1.10:junos:core::
+
+# Distribution layer (per-device credentials)
+edge-switch01:10.1.2.1:procurve:distribution:switchadmin:Pass123
+edge-switch02:10.1.2.2:procurve:distribution:switchadmin:Pass123
+
+# Security devices (different credentials)
+firewall01:10.1.3.1:fortios:firewalls:fwadmin:FwPass456
+firewall02:10.1.3.2:fortios:firewalls:fwadmin:FwPass456
+
+# Data center (using FQDN)
+datacenter-sw01:dc-sw01.example.com:nxos:datacenter::
+datacenter-sw02:dc-sw02.example.com:nxos:datacenter::
+
+# Branch sites
+branch-router01:10.2.1.1:ios:branch::
+branch-router02:10.2.2.1:ios:branch::
+```
+
+#### Validation
+
+After creating `router.db`, validate it loads correctly:
+
+```bash
+# Check file exists and has correct permissions
+ls -la /var/lib/oxidized/config/router.db
+# Should show: -rw------- 1 oxidized oxidized ... router.db
+
+# Restart service to load new inventory
+sudo systemctl restart oxidized.service
+
+# Check for errors
+sudo systemctl status oxidized.service
+sudo journalctl -u oxidized.service -n 50
+
+# View Oxidized logs
+sudo tail -f /var/lib/oxidized/data/oxidized.log
+```
+
+#### Inventory Troubleshooting
+
+**Problem**: Devices not being backed up
+
+**Solutions**:
+1. Check file permissions: `ls -la /var/lib/oxidized/config/router.db`
+2. Verify file format (colon delimiters, no spaces)
+3. Check credentials are correct
+4. Verify device model is supported
+5. Ensure devices are network-reachable from container
+
+**Problem**: "Permission denied" errors
+
+**Solution**: Fix ownership and permissions
+
+```bash
+sudo chown 2000:2000 /var/lib/oxidized/config/router.db
+sudo chmod 600 /var/lib/oxidized/config/router.db
+sudo systemctl restart oxidized.service
+```
 
 ### Environment Variables
 

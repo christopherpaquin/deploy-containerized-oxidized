@@ -1,0 +1,83 @@
+# Oxidized Router Database (CSV Format)
+#
+# This file defines the network devices that Oxidized will back up.
+# Format: Colon-delimited CSV with 6 columns
+#
+# COLUMN ORDER (0-indexed):
+#   0: name      - Unique device identifier (hostname)
+#   1: ip        - IP address or FQDN
+#   2: model     - Device model/type (ios, nxos, eos, junos, procurve, fortios, etc.)
+#   3: group     - Logical grouping (for organization and filtering)
+#   4: username  - Device login username (or leave blank for global default)
+#   5: password  - Device login password (or leave blank for global default)
+#
+# CREDENTIAL MODES:
+# =================
+# Mode A: Per-Device Credentials (use columns 4 & 5)
+#   - Specify username and password for each device in this file
+#   - Best for heterogeneous environments with different device credentials
+#
+# Mode B: Global Credentials (leave columns 4 & 5 blank or use placeholder)
+#   - Set OXIDIZED_USERNAME and OXIDIZED_PASSWORD in .env
+#   - Leave username/password columns blank in this file
+#   - Best for homogeneous environments with shared credentials
+#
+# SECURITY WARNING:
+# =================
+# - This file will contain PLAINTEXT PASSWORDS if using per-device credentials
+# - File location: /var/lib/oxidized/router.db (on host)
+# - REQUIRED permissions: chmod 600, owned by oxidized (UID 2000)
+# - NEVER commit this file with real credentials to Git
+#
+# SUPPORTED MODELS (common examples):
+# - ios       : Cisco IOS
+# - iosxr     : Cisco IOS XR
+# - nxos      : Cisco Nexus
+# - eos       : Arista EOS
+# - junos     : Juniper JunOS
+# - procurve  : HP ProCurve
+# - comware   : HP Comware
+# - fortios   : FortiGate
+# - asa       : Cisco ASA
+# - panos     : Palo Alto PAN-OS
+# - aoscx     : Aruba AOS-CX
+# - See: https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model
+#
+# EXAMPLE ENTRIES:
+# ================
+# Format: name:ip:model:group:username:password
+
+# Example 1: Core Router (Per-device credentials)
+core-router01:10.1.1.1:ios:core:netadmin:CHANGEME
+
+# Example 2: Distribution Switch (Per-device credentials)
+edge-switch01:10.1.2.1:procurve:distribution:switchuser:CHANGEME
+
+# Example 3: Firewall (Per-device credentials)
+firewall01:10.1.3.1:fortios:firewalls:fwadmin:CHANGEME
+
+# Example 4: Data Center Switch (Per-device credentials)
+datacenter-sw02:10.1.4.2:comware:dc-switches:comwareuser:CHANGEME
+
+# Example 5: Branch Switch (Per-device credentials)
+branch-sw01:10.2.2.1:ios:branch:netops:CHANGEME
+
+# Example 6: Using FQDN instead of IP
+branch-router01:router.branch1.example.com:ios:branch:netops:CHANGEME
+
+# Example 7: Juniper device
+core-switch01:10.1.1.10:junos:core:netadmin:CHANGEME
+
+# Example 8: Arista device
+datacenter-leaf01:10.1.4.10:eos:dc-switches:dcadmin:CHANGEME
+
+# Example 9: Cisco Nexus
+datacenter-spine01:10.1.4.20:nxos:dc-switches:dcadmin:CHANGEME
+
+# Example 10: Global credentials mode (leave username/password blank)
+# branch-sw02:10.2.2.2:ios:branch::
+# branch-sw03:10.2.2.3:ios:branch::
+# branch-sw04:10.2.2.4:ios:branch::
+
+# ADD YOUR DEVICES BELOW:
+# =======================

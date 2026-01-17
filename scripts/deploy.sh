@@ -401,8 +401,8 @@ deploy_config() {
     log_success "Generated and deployed: ${dst_config}"
   fi
 
-  # Deploy inventory example
-  local src_inventory="${REPO_ROOT}/config/oxidized/inventory/devices.csv.example"
+  # Deploy inventory template (if not exists)
+  local src_inventory="${REPO_ROOT}/inventory/router.db.template"
   local dst_inventory="${OXIDIZED_ROOT}/config/router.db"
 
   if [[ -f "${dst_inventory}" ]]; then
@@ -411,11 +411,17 @@ deploy_config() {
     if [[ "${DRY_RUN}" == "true" ]]; then
       log_info "[DRY-RUN] Would copy: ${src_inventory} -> ${dst_inventory}"
     else
-      cp "${src_inventory}" "${dst_inventory}"
-      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_inventory}"
-      chmod 640 "${dst_inventory}"
-      log_success "Deployed: ${dst_inventory}"
-      log_warn "IMPORTANT: Edit ${dst_inventory} with your devices"
+      if [[ -f "${src_inventory}" ]]; then
+        cp "${src_inventory}" "${dst_inventory}"
+        chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_inventory}"
+        chmod 600 "${dst_inventory}"
+        log_success "Deployed inventory template: ${dst_inventory}"
+        log_warn "IMPORTANT: Edit ${dst_inventory} with your network devices"
+        log_warn "Format: name:ip:model:group:username:password (colon-delimited)"
+      else
+        log_warn "Inventory template not found: ${src_inventory}"
+        log_info "Create ${dst_inventory} manually with format: name:ip:model:group:username:password"
+      fi
     fi
   fi
 
@@ -747,7 +753,8 @@ ${COLOR_BLUE}Next Steps:${COLOR_RESET}
 
 1. ${COLOR_YELLOW}Configure device inventory (router.db):${COLOR_RESET}
    sudo vim ${OXIDIZED_ROOT}/config/router.db
-   Format: name,ip,model,group (one device per line)
+   Format: name:ip:model:group:username:password (colon-delimited)
+   Note: Leave username/password blank to use global credentials from .env
 
 2. ${COLOR_YELLOW}Verify device credentials:${COLOR_RESET}
    sudo vim ${OXIDIZED_ROOT}/config/config
@@ -769,7 +776,7 @@ ${COLOR_BLUE}Next Steps:${COLOR_RESET}
 
 ${COLOR_BLUE}Data Locations:${COLOR_RESET}
   Configuration: ${OXIDIZED_ROOT}/config/
-  Device List:   ${OXIDIZED_ROOT}/config/router.db
+  Device List:   ${OXIDIZED_ROOT}/config/router.db (colon-delimited CSV)
   SSH Keys:      ${OXIDIZED_ROOT}/ssh/
   Git Backups:   ${OXIDIZED_ROOT}/repo/
   Output:        ${OXIDIZED_ROOT}/output/
