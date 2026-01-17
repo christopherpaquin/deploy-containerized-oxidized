@@ -1,0 +1,11 @@
+name,ip,model,group
+core-sw-01,192.168.1.1,ios,core
+core-sw-02,192.168.1.2,ios,core
+dist-sw-01,192.168.2.1,ios,distribution
+dist-sw-02,192.168.2.2,ios,distribution
+access-sw-01,192.168.3.1,ios,access
+access-sw-02,192.168.3.2,ios,access
+fw-01,192.168.10.1,asa,security
+fw-02,192.168.10.2,asa,security
+router-wan-01,192.168.20.1,ios,wan
+router-wan-02,192.168.20.2,ios,wan

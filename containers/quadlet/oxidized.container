@@ -1,0 +1,61 @@
+# Podman Quadlet configuration for Oxidized
+# Install this file to: /etc/containers/systemd/oxidized.container
+# Then run: systemctl daemon-reload && systemctl enable --now oxidized
+#
+# This file generates a systemd service that manages the Oxidized container
+# with automatic restarts and persistent storage.
+
+[Unit]
+Description=Oxidized Network Configuration Backup Service
+Documentation=https://github.com/yggdrasil-network/oxidized
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Pinned to stable release (not latest)
+# Check https://hub.docker.com/r/oxidized/oxidized/tags for versions
+Image=docker.io/oxidized/oxidized:0.30.1
+
+# Container name for easier management
+ContainerName=oxidized
+
+# Network configuration - expose Web UI and REST API
+PublishPort=8888:8888
+
+# Persistent storage with SELinux relabeling (:Z)
+# Host -> Container mappings
+Volume=/srv/oxidized/config:/etc/oxidized:Z
+Volume=/srv/oxidized/inventory:/etc/oxidized/inventory:Z
+Volume=/srv/oxidized/data:/var/lib/oxidized:Z
+Volume=/srv/oxidized/git:/var/lib/oxidized/configs.git:Z
+Volume=/srv/oxidized/logs:/var/lib/oxidized/logs:Z
+
+# Environment variables
+Environment=TZ=UTC
+
+# Security: run as non-root inside container (Oxidized default UID 30000)
+# No privileged mode required
+User=30000:30000
+
+# Health check via API
+HealthCmd=/usr/bin/curl -f http://localhost:8888/ || exit 1
+HealthInterval=30s
+HealthTimeout=10s
+HealthRetries=3
+HealthStartPeriod=60s
+
+[Service]
+# Restart policy for production reliability
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# Resource limits (adjust based on device count)
+# For ~100 devices, these are conservative
+MemoryLimit=1G
+CPUQuota=100%
+
+[Install]
+# Enable service to start on boot
+WantedBy=multi-user.target default.target

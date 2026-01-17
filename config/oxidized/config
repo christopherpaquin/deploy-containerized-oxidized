@@ -1,0 +1,87 @@
+---
+# Oxidized Configuration
+# This file should be deployed to: /srv/oxidized/config/config
+# Inside the container it will be mounted at: /etc/oxidized/config
+
+# Username and password for device login
+# SECURITY: These should be set via environment variables in production
+# Set these in the Quadlet file or use a secrets manager
+username: oxidized
+password: oxidized
+
+# Polling interval in seconds (3600 = hourly)
+interval: 3600
+
+# Log configuration
+# Logs are written to persistent storage, not /var/log
+log: /var/lib/oxidized/logs/oxidized.log
+
+# Debugging (set to true for troubleshooting)
+debug: false
+threads: 30
+timeout: 20
+retries: 3
+prompt: !ruby/regexp /^([\w.@-]+[#>]\s?)$/
+next_adds_job: false
+
+# REST API configuration
+rest: 0.0.0.0:8888
+
+# Web UI configuration
+# Accessible at http://<host>:8888
+web: true
+
+# Input configuration
+input:
+  default: ssh, telnet
+  debug: false
+  ssh:
+    secure: false
+
+# Output configuration - Git repository
+output:
+  default: git
+  git:
+    user: Oxidized
+    email: oxidized@example.com
+    repo: /var/lib/oxidized/configs.git
+
+# Source configuration - CSV inventory
+source:
+  default: csv
+  csv:
+    file: /etc/oxidized/inventory/devices.csv
+    delimiter: ","
+    map:
+      name: 0
+      ip: 1
+      model: 2
+      group: 3
+    gpg: false
+
+# Model-specific configurations
+# Add device models as needed
+models: {}
+
+# Group-specific configurations
+groups: {}
+
+# PID file location
+pid: /var/lib/oxidized/oxidized.pid
+
+# Crash directory for debugging
+crash:
+  directory: /var/lib/oxidized/crashes
+  hostnames: false
+
+# Stats configuration
+stats:
+  history_size: 10
+
+# Hooks for notifications (optional)
+# Uncomment and configure as needed
+# hooks:
+#   slack:
+#     type: slackdiff
+#     events: [post_store]
+#     url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL

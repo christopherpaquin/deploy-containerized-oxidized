@@ -1,0 +1,46 @@
+# Logrotate configuration for Oxidized
+# Install this file to: /etc/logrotate.d/oxidized
+#
+# This configuration rotates logs written by the Oxidized container
+# to persistent host storage at /srv/oxidized/logs/
+
+/srv/oxidized/logs/*.log {
+    # Rotate daily
+    daily
+    
+    # Keep 14 days of logs
+    rotate 14
+    
+    # Compress old logs
+    compress
+    
+    # Delay compression until the next rotation
+    # (avoids compressing a log file that might still be written to)
+    delaycompress
+    
+    # Don't error if log file is missing
+    missingok
+    
+    # Don't rotate if log file is empty
+    notifempty
+    
+    # Copy and truncate the log file instead of moving it
+    # This is critical for containers that keep the file handle open
+    copytruncate
+    
+    # Don't mail old logs
+    nomail
+    
+    # Create new log files with specific permissions
+    # User/group will be set by the container
+    create 0644 root root
+    
+    # Shared scripts for all log files
+    sharedscripts
+    
+    # Post-rotation script (optional)
+    # Uncomment if you need to signal the application
+    # postrotate
+    #     # No need to signal - copytruncate handles this
+    # endscript
+}
