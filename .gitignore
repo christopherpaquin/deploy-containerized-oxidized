@@ -31,6 +31,15 @@ secrets.*
 router.db
 !inventory/router.db.template
 
+# Generated quadlet files (only template is tracked)
+# The actual quadlet is generated during deployment to /etc/containers/systemd/
+containers/quadlet/oxidized.container
+
+# Review documents (temporary analysis, not tracked)
+SRE-REVIEW.md
+SRE-REVIEW-VERIFICATION.md
+*-REVIEW.md
+
 # ---------------------------------------------------------------------------
 # API Keys and Access Tokens (Section 7.1.2.1, 7.1.2.2)
 # ---------------------------------------------------------------------------
