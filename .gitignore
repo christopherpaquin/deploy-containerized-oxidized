@@ -1,0 +1,161 @@
+###############################################################################
+# GitHub AI Engineering Framework - .gitignore
+#
+# This file follows the standards defined in docs/ai/CONTEXT.md
+# Secrets, runtime artifacts, and generated files must never be committed.
+###############################################################################
+
+# ---------------------------------------------------------------------------
+# Environment variables / secrets
+# ---------------------------------------------------------------------------
+# Per docs/ai/CONTEXT.md Section 7.1 - Secrets Management
+
+# Standard environment files
+.env
+.env.*
+!.env.example
+
+# Alternative env naming (supported, but discouraged in favor of .env)
+vars.env
+vars.env.*
+!vars.env.example
+
+# Generic secrets
+secrets.*
+*.secret
+*.secrets
+
+# ---------------------------------------------------------------------------
+# API Keys and Access Tokens (Section 7.1.2.1, 7.1.2.2)
+# ---------------------------------------------------------------------------
+# API key files
+*api*key*
+*apikey*
+*access*token*
+*oauth*token*
+*refresh*token*
+*pat*
+*personal*access*token*
+
+# ---------------------------------------------------------------------------
+# Cloud Provider Credentials (Section 7.1.2.4)
+# ---------------------------------------------------------------------------
+.aws/
+.gcp/
+.azure/
+.terraform/
+terraform.tfvars
+terraform.tfvars.json
+*.tfvars
+*.tfvars.json
+
+# GCP service account keys
+*service-account*.json
+*gcp*.json
+*gcloud*.json
+
+# AWS credentials
+.aws/credentials
+.aws/config
+aws-credentials.json
+
+# Azure credentials
+.azure/credentials
+azure-credentials.json
+
+# ---------------------------------------------------------------------------
+# Cryptographic Private Keys (Section 7.1.2.5)
+# ---------------------------------------------------------------------------
+# SSH keys
+id_rsa
+id_ed25519
+id_ecdsa
+id_dsa
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+
+# TLS/SSL certificates (private keys only - public certs may be OK)
+*.key
+*.pem
+!*.pub
+!*.public
+
+# Signing keys
+*.signing.key
+*.private.key
+
+# ---------------------------------------------------------------------------
+# Service Account Credentials (Section 7.1.2.6)
+# ---------------------------------------------------------------------------
+*service-account*.json
+*service-account*.yaml
+*service-account*.yml
+*credentials*.json
+*credentials*.yaml
+*credentials*.yml
+
+# ---------------------------------------------------------------------------
+# Webhook Secrets (Section 7.1.2.7)
+# ---------------------------------------------------------------------------
+*webhook*secret*
+*webhook*signing*
+*hook*secret*
+
+# ---------------------------------------------------------------------------
+# Generated logs and caches that may contain secrets
+# ---------------------------------------------------------------------------
+*.log
+!artifacts/pre-commit.log
+*.cache
+*.tmp
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env-venv/
+
+# ---------------------------------------------------------------------------
+# Pre-commit / tooling artifacts
+# ---------------------------------------------------------------------------
+
+# Local pre-commit caches (never commit)
+.pre-commit-cache/
+.precommit/
+
+# AI / lint / CI artifacts (generated)
+artifacts/
+*.log
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---------------------------------------------------------------------------
+# Build / runtime output
+# ---------------------------------------------------------------------------
+
+dist/
+build/
+out/
+coverage/

@@ -1,0 +1,61 @@
+repos:
+  # Basic repository hygiene and safety checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: detect-private-key
+
+  # Custom secret detection (comprehensive API keys, tokens, credentials)
+  - repo: local
+    hooks:
+      - id: detect-secrets
+        name: Detect Secrets (API Keys, Tokens, Credentials)
+        entry: scripts/detect-secrets.sh
+        language: system
+        pass_filenames: false
+        always_run: false
+
+  # Python: Ruff (lint + autofix) and Ruff formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Bash: ShellCheck
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+
+  # Bash: shfmt (format shell scripts)
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.8.0-1
+    hooks:
+      - id: shfmt
+        args:
+          - -w
+          - -i
+          - "2"
+          - -ci
+          - -sr
+
+  # Markdown: PyMarkdown (Python-based; avoids nodeenv/Node)
+  - repo: https://github.com/jackdewinter/pymarkdown
+    rev: v0.9.25
+    hooks:
+      - id: pymarkdown
+        args: ["--config", ".pymarkdown.json", "scan"]
+        exclude: ^\.github/pull_request_template\.md$
+
+
+default_language_version:
+  python: python3

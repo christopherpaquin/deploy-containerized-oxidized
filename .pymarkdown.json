@@ -1,0 +1,20 @@
+{
+  "plugins": {
+    "md013": {
+      "enabled": true,
+      "line_length": 120
+    },
+    "md041": {
+      "enabled": false
+    },
+    "md022": {
+      "enabled": true
+    },
+    "md032": {
+      "enabled": true
+    },
+    "md033": {
+      "enabled": false
+    }
+  }
+}
