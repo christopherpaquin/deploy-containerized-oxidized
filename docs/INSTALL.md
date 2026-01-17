@@ -88,7 +88,7 @@ sudo mkdir -p /srv/oxidized
 
 # Create subdirectories
 sudo mkdir -p /srv/oxidized/config
-sudo mkdir -p /srv/oxidized/inventory
+sudo mkdir -p /var/lib/oxidized/config
 sudo mkdir -p /srv/oxidized/data
 sudo mkdir -p /srv/oxidized/git
 sudo mkdir -p /srv/oxidized/logs
@@ -99,7 +99,7 @@ sudo chown -R root:root /srv/oxidized
 # Set permissions
 sudo chmod 755 /srv/oxidized
 sudo chmod 755 /srv/oxidized/config
-sudo chmod 755 /srv/oxidized/inventory
+sudo chmod 750 /var/lib/oxidized/config
 sudo chmod 755 /srv/oxidized/data
 sudo chmod 755 /srv/oxidized/git
 sudo chmod 755 /srv/oxidized/logs
@@ -112,7 +112,7 @@ tree /srv/oxidized
 # Expected output:
 # /srv/oxidized/
 # ├── config/
-# ├── inventory/
+# ├── config/
 # ├── data/
 # ├── git/
 # └── logs/
@@ -136,24 +136,27 @@ ls -la /srv/oxidized/config/config
 
 #### 3.2 Create Device Inventory
 
-Create your device inventory CSV file:
+Create your device inventory file (`router.db`):
 
 ```bash
-# Copy example template
-sudo cp config/oxidized/inventory/devices.csv.example \
-        /srv/oxidized/inventory/devices.csv
+# Copy template
+sudo cp inventory/router.db.template /var/lib/oxidized/config/router.db
 
-# Edit with your actual devices
-sudo vim /srv/oxidized/inventory/devices.csv
+# Edit with your devices
+sudo vim /var/lib/oxidized/config/router.db
+
+# Set secure permissions
+sudo chown 2000:2000 /var/lib/oxidized/config/router.db
+sudo chmod 600 /var/lib/oxidized/config/router.db
 ```
 
-**CSV Format**:
+**Format**: Colon-delimited CSV (`:`)
 
-```csv
-name,ip,model,group
-switch-01,192.168.1.1,ios,core
-router-01,192.168.2.1,ios,wan
-firewall-01,192.168.3.1,asa,security
+```text
+name:ip:model:group:username:password
+core-router01:10.1.1.1:ios:core::
+edge-switch01:10.1.2.1:procurve:distribution::
+firewall01:10.1.3.1:fortios:firewalls::
 ```
 
 **Supported Models**: `ios`, `iosxr`, `nxos`, `asa`, `junos`, `eos`, and [many more](https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model).
@@ -439,7 +442,7 @@ tar -czf "${BACKUP_DIR}/oxidized-git-${TIMESTAMP}.tar.gz" \
 
 # Backup configuration
 tar -czf "${BACKUP_DIR}/oxidized-config-${TIMESTAMP}.tar.gz" \
-    -C /srv/oxidized config/ inventory/
+    -C /var/lib/oxidized config/
 
 # Keep only last 7 days
 find "${BACKUP_DIR}" -type f -mtime +7 -delete
@@ -509,7 +512,7 @@ sudo systemctl restart oxidized.service
 
 ```bash
 # Check device inventory
-cat /srv/oxidized/inventory/devices.csv
+cat /var/lib/oxidized/config/router.db
 
 # Verify credentials in config
 sudo cat /srv/oxidized/config/config | grep -A2 username
@@ -589,7 +592,7 @@ curl -X GET http://localhost:8888/node/fetch/switch-01
 | Purpose | Host Path | Container Path |
 |---------|-----------|----------------|
 | Config | `/srv/oxidized/config` | `/etc/oxidized` |
-| Inventory | `/srv/oxidized/inventory` | `/etc/oxidized/inventory` |
+| Inventory | `/var/lib/oxidized/config` | `/home/oxidized/.config/oxidized` |
 | Data | `/srv/oxidized/data` | `/var/lib/oxidized` |
 | Git Repo | `/srv/oxidized/git` | `/var/lib/oxidized/configs.git` |
 | Logs | `/srv/oxidized/logs` | `/var/lib/oxidized/logs` |

@@ -103,7 +103,7 @@ This document serves as the **source of truth** for implementation and automatio
 
 - Inventory source: CSV
 
-- CSV fields:
+- CSV fields (colon-delimited):
 
   - name
 
@@ -329,8 +329,9 @@ With Quadlets:
 `/srv/oxidized/
 ├── config/
 │   └── config
-├── inventory/
-│   └── devices.csv
+├── config/
+│   ├── config
+│   └── router.db
 ├── data/
 │   └── nodes/
 ├── git/
@@ -476,7 +477,7 @@ Additonal Requirements:
 
 4) Oxidized container/image and config:
    - Use a well-known Oxidized image (choose one and justify briefly).
-   - Store `config` and `router.db` under `/var/lib/oxidized` on the host and bind mount into the container
+   - Store `config` directory with `config` and `router.db` files under `/var/lib/oxidized/config` on the host and bind mount into the container
      at the correct path for that image.
    - Configure git output to a repo directory under `/var/lib/oxidized` (e.g., `/var/lib/oxidized/repo`).
    - Ensure SSH keys are used from `/var/lib/oxidized/ssh` and document expected filenames and permissions.
