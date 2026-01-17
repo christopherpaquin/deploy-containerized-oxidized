@@ -608,6 +608,8 @@ This deployment includes multiple security hardening measures:
    sudo -u oxidized ssh-copy-id -i /var/lib/oxidized/ssh/id_ed25519.pub admin@device
    ```
 
+   📖 **For detailed SSH key setup**, see [SSH Key Authentication](README-OXIDIZED.md#ssh-key-authentication-recommended) in README-OXIDIZED.md
+
 3. **Secure the `.env` file**:
    ```bash
    chmod 600 .env

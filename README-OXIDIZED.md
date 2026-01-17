@@ -312,6 +312,337 @@ Use global credentials as default, override for specific devices:
    firewall01:10.1.3.1:fortios:firewalls:fwadmin:SpecialPass123
    ```
 
+### SSH Key Authentication (Recommended)
+
+**SSH key authentication is the preferred method** for securing device access. It eliminates plaintext passwords and provides better security and auditability.
+
+#### Why Use SSH Keys?
+
+✅ **More secure** - No plaintext passwords in configuration files
+✅ **Centralized management** - One key pair for all devices
+✅ **Better auditing** - Device logs show key-based authentication
+✅ **Easy rotation** - Revoke old key, deploy new one
+✅ **Prevents password spray attacks** - Keys are cryptographically strong
+
+#### How SSH Keys Work with Oxidized
+
+1. **Key pair generated** on Oxidized host (private + public key)
+2. **Public key deployed** to all network devices
+3. **Private key stays** on Oxidized server (read-only mount to container)
+4. **Oxidized authenticates** using private key (no password needed)
+
+#### SSH Key File Locations
+
+**On Host:**
+```
+/var/lib/oxidized/ssh/
+├── id_ed25519          # Private key (keep secret!)
+├── id_ed25519.pub      # Public key (deploy to devices)
+└── known_hosts         # SSH fingerprints (auto-created)
+```
+
+**In Container** (bind-mounted read-only):
+```
+/home/oxidized/.ssh/    → /var/lib/oxidized/ssh (host)
+```
+
+---
+
+#### Step-by-Step Setup
+
+##### Step 1: Generate SSH Key Pair
+
+###### Option A: Ed25519 (Recommended - Modern, Secure, Fast)
+
+```bash
+# Generate key as the oxidized user
+sudo -u oxidized ssh-keygen -t ed25519 \
+  -f /var/lib/oxidized/ssh/id_ed25519 \
+  -C "oxidized@$(hostname)" \
+  -N ""
+
+# Set correct permissions (critical!)
+sudo chmod 600 /var/lib/oxidized/ssh/id_ed25519
+sudo chmod 644 /var/lib/oxidized/ssh/id_ed25519.pub
+sudo chown 2000:2000 /var/lib/oxidized/ssh/id_ed25519*
+```
+
+###### Option B: RSA 4096 (Traditional, Widely Supported)
+
+```bash
+# Generate RSA key
+sudo -u oxidized ssh-keygen -t rsa -b 4096 \
+  -f /var/lib/oxidized/ssh/id_rsa \
+  -C "oxidized@$(hostname)" \
+  -N ""
+
+# Set permissions
+sudo chmod 600 /var/lib/oxidized/ssh/id_rsa
+sudo chmod 644 /var/lib/oxidized/ssh/id_rsa.pub
+sudo chown 2000:2000 /var/lib/oxidized/ssh/id_rsa*
+```
+
+**Key Generation Options Explained:**
+- `-t ed25519` or `-t rsa -b 4096` - Key type and size
+- `-f /path/to/key` - Output file path
+- `-C "comment"` - Key comment (helpful for identification)
+- `-N ""` - No passphrase (required for automated backups)
+
+##### Step 2: Deploy Public Key to Network Devices
+
+You have two deployment methods:
+
+###### Method A: Automated (ssh-copy-id)
+
+```bash
+# Copy public key to each device
+sudo -u oxidized ssh-copy-id -i /var/lib/oxidized/ssh/id_ed25519.pub admin@10.1.1.1
+sudo -u oxidized ssh-copy-id -i /var/lib/oxidized/ssh/id_ed25519.pub admin@10.1.2.1
+sudo -u oxidized ssh-copy-id -i /var/lib/oxidized/ssh/id_ed25519.pub admin@10.1.3.1
+
+# You'll be prompted for the password once per device
+```
+
+###### Method B: Manual (for devices without ssh-copy-id support)
+
+1. **Display the public key:**
+
+   ```bash
+   sudo cat /var/lib/oxidized/ssh/id_ed25519.pub
+   ```
+
+2. **Copy the output** (entire line, looks like):
+
+   ```
+   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGx... oxidized@hostname
+   ```
+
+3. **Add to device authorized_keys** (varies by vendor):
+
+   **Cisco IOS/IOS-XE:**
+   ```
+   conf t
+   ip ssh pubkey-chain
+     username admin
+       key-string
+         <paste public key here>
+       exit
+     exit
+   exit
+   write memory
+   ```
+
+   **Juniper JunOS:**
+   ```
+   set system login user admin authentication ssh-rsa "<paste public key>"
+   commit
+   ```
+
+   **Arista EOS:**
+   ```
+   configure
+   username admin sshkey ssh-ed25519 <paste public key>
+   write memory
+   ```
+
+   **Linux/Unix devices:**
+   ```bash
+   # SSH to device and run:
+   echo "ssh-ed25519 AAAAC3Nz..." >> ~/.ssh/authorized_keys
+   chmod 600 ~/.ssh/authorized_keys
+   ```
+
+##### Step 3: Configure Oxidized to Use SSH Keys
+
+**Update `.env` file:**
+
+```bash
+# SSH key configuration
+SSH_PRIVATE_KEY="id_ed25519"     # or "id_rsa" for RSA keys
+SSH_KNOWN_HOSTS="known_hosts"
+
+# Optional: Set username (if using SSH keys, password not needed)
+OXIDIZED_USERNAME="admin"
+OXIDIZED_PASSWORD=""             # Can be blank or dummy value
+```
+
+**Update `router.db`** (leave password columns blank):
+
+```text
+# SSH key auth - no passwords needed
+core-router01:10.1.1.1:ios:core:admin:
+edge-switch01:10.1.2.1:procurve:distribution:admin:
+firewall01:10.1.3.1:fortios:firewalls:admin:
+```
+
+Or use global credentials (username only):
+
+```text
+# Global username from .env, SSH key for auth
+core-router01:10.1.1.1:ios:core::
+edge-switch01:10.1.2.1:procurve:distribution::
+```
+
+##### Step 4: Restart and Verify
+
+```bash
+# Restart service to load SSH key
+sudo systemctl restart oxidized.service
+
+# Check for errors
+sudo systemctl status oxidized.service
+
+# Watch logs for SSH authentication
+sudo journalctl -u oxidized.service -f
+```
+
+**Successful SSH key authentication logs look like:**
+
+```
+Successfully connected to device 10.1.1.1 using SSH key authentication
+Fetching configuration from core-router01 (10.1.1.1)
+```
+
+---
+
+#### Troubleshooting SSH Key Authentication
+
+##### Problem: "Permission denied (publickey)"
+
+```bash
+# Check key permissions
+ls -la /var/lib/oxidized/ssh/
+# Should show:
+# -rw------- 1 oxidized oxidized ... id_ed25519 (600)
+# -rw-r--r-- 1 oxidized oxidized ... id_ed25519.pub (644)
+
+# Fix permissions
+sudo chmod 600 /var/lib/oxidized/ssh/id_ed25519
+sudo chown 2000:2000 /var/lib/oxidized/ssh/id_ed25519
+
+# Verify public key is on device
+ssh admin@10.1.1.1 "show run | include ssh"  # Cisco IOS
+```
+
+##### Problem: "Host key verification failed"
+
+```bash
+# Clear known_hosts and retry (first connection)
+sudo rm /var/lib/oxidized/ssh/known_hosts
+sudo systemctl restart oxidized.service
+
+# Or manually accept host key
+sudo -u oxidized ssh -o StrictHostKeyChecking=no admin@10.1.1.1
+```
+
+##### Problem: "Private key not found"
+
+```bash
+# Verify file exists
+ls -l /var/lib/oxidized/ssh/id_ed25519
+
+# Check .env configuration
+grep SSH_PRIVATE_KEY /root/deploy-containerized-oxidized/.env
+
+# Verify bind mount in container
+sudo podman exec oxidized ls -la /home/oxidized/.ssh/
+```
+
+##### Problem: Device still prompts for password
+
+- **Cause 1**: Public key not deployed correctly to device
+- **Cause 2**: Device username doesn't match (check `router.db` column 4)
+- **Cause 3**: Device SSH key authentication disabled
+- **Cause 4**: Wrong key format for device (try RSA instead of Ed25519)
+
+```bash
+# Test SSH key authentication manually
+sudo -u oxidized ssh -i /var/lib/oxidized/ssh/id_ed25519 admin@10.1.1.1
+
+# If successful, check Oxidized config
+sudo cat /var/lib/oxidized/config/config | grep -A5 "ssh:"
+```
+
+---
+
+#### Security Best Practices for SSH Keys
+
+1. **Never share the private key** (`id_ed25519` or `id_rsa`)
+   - Keep it on the Oxidized server only
+   - Never email, copy to workstations, or commit to Git
+
+2. **Restrict private key permissions**:
+   ```bash
+   sudo chmod 600 /var/lib/oxidized/ssh/id_ed25519
+   sudo chown 2000:2000 /var/lib/oxidized/ssh/id_ed25519
+   ```
+
+3. **Audit device logs** for SSH key usage:
+   - Monitor for unauthorized key-based logins
+   - Verify Oxidized server IP is the only source
+
+4. **Rotate keys periodically** (annually recommended):
+   ```bash
+   # Generate new key
+   sudo -u oxidized ssh-keygen -t ed25519 -f /var/lib/oxidized/ssh/id_ed25519_new
+
+   # Deploy to all devices
+   # Remove old key from devices
+   # Rename new key to replace old
+   sudo mv /var/lib/oxidized/ssh/id_ed25519_new /var/lib/oxidized/ssh/id_ed25519
+
+   # Restart Oxidized
+   sudo systemctl restart oxidized.service
+   ```
+
+5. **Backup private key securely**:
+   ```bash
+   # Encrypted backup
+   sudo tar -czf - /var/lib/oxidized/ssh/id_ed25519 | \
+     gpg --symmetric --cipher-algo AES256 > oxidized-sshkey-backup.tar.gz.gpg
+
+   # Store in secure location (vault, encrypted storage)
+   ```
+
+6. **Use device ACLs** to restrict SSH access:
+   ```
+   # Cisco IOS example - only allow Oxidized server
+   access-list 10 permit host 10.0.0.50
+   line vty 0 15
+     access-class 10 in
+   ```
+
+---
+
+#### Mixed Authentication (SSH Keys + Passwords)
+
+You can use **both SSH keys and passwords** in the same deployment:
+
+**Scenario**: Most devices use SSH keys, but legacy devices require passwords
+
+**Configuration**:
+
+1. **Set global SSH key** in `.env`:
+   ```bash
+   SSH_PRIVATE_KEY="id_ed25519"
+   OXIDIZED_USERNAME="admin"
+   ```
+
+2. **Specify passwords only for exceptions** in `router.db`:
+   ```text
+   # Modern devices - use SSH key (blank password)
+   core-router01:10.1.1.1:ios:core:admin:
+   edge-switch01:10.1.2.1:procurve:distribution:admin:
+
+   # Legacy device - requires password (SSH keys not supported)
+   old-switch01:10.1.99.1:ios:legacy:admin:LegacyPassword123
+   ```
+
+**Oxidized behavior**:
+- Tries SSH key authentication first
+- Falls back to password if key auth fails
+- Logs indicate which method succeeded
+
 ### Supported Models (Common Examples)
 
 | Vendor | Model Code | Description |
