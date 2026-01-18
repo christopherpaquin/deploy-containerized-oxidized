@@ -16,8 +16,7 @@
       "enabled": false
     },
     "MD024": {
-      "enabled": true,
-      "siblings_only": true
+      "enabled": false
     },
     "MD026": {
       "enabled": false
