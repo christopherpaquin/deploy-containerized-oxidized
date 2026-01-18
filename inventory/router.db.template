@@ -43,36 +43,36 @@
 # - aoscx     : Aruba AOS-CX
 # - See: https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model
 #
-# EXAMPLE ENTRIES:
-# ================
+# EXAMPLE ENTRIES (COMMENTED OUT - UNCOMMENT AND MODIFY TO USE):
+# ================================================================
 # Format: name:ip:model:group:username:password
 
 # Example 1: Core Router (Per-device credentials)
-core-router01:10.1.1.1:ios:core:netadmin:CHANGEME
+# core-router01:10.1.1.1:ios:core:netadmin:CHANGEME
 
 # Example 2: Distribution Switch (Per-device credentials)
-edge-switch01:10.1.2.1:procurve:distribution:switchuser:CHANGEME
+# edge-switch01:10.1.2.1:procurve:distribution:switchuser:CHANGEME
 
 # Example 3: Firewall (Per-device credentials)
-firewall01:10.1.3.1:fortios:firewalls:fwadmin:CHANGEME
+# firewall01:10.1.3.1:fortios:firewalls:fwadmin:CHANGEME
 
 # Example 4: Data Center Switch (Per-device credentials)
-datacenter-sw02:10.1.4.2:comware:dc-switches:comwareuser:CHANGEME
+# datacenter-sw02:10.1.4.2:comware:dc-switches:comwareuser:CHANGEME
 
 # Example 5: Branch Switch (Per-device credentials)
-branch-sw01:10.2.2.1:ios:branch:netops:CHANGEME
+# branch-sw01:10.2.2.1:ios:branch:netops:CHANGEME
 
 # Example 6: Using FQDN instead of IP
-branch-router01:router.branch1.example.com:ios:branch:netops:CHANGEME
+# branch-router01:router.branch1.example.com:ios:branch:netops:CHANGEME
 
 # Example 7: Juniper device
-core-switch01:10.1.1.10:junos:core:netadmin:CHANGEME
+# core-switch01:10.1.1.10:junos:core:netadmin:CHANGEME
 
 # Example 8: Arista device
-datacenter-leaf01:10.1.4.10:eos:dc-switches:dcadmin:CHANGEME
+# datacenter-leaf01:10.1.4.10:eos:dc-switches:dcadmin:CHANGEME
 
 # Example 9: Cisco Nexus
-datacenter-spine01:10.1.4.20:nxos:dc-switches:dcadmin:CHANGEME
+# datacenter-spine01:10.1.4.20:nxos:dc-switches:dcadmin:CHANGEME
 
 # Example 10: Global credentials mode (leave username/password blank)
 # branch-sw02:10.2.2.2:ios:branch::

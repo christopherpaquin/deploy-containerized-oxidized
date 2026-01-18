@@ -81,11 +81,14 @@ configurations, tracks changes using Git, and supports 130+ device models.
 
 ### 🛡️ Security
 
-- **Non-root container**: Runs as dedicated system user
-- **SELinux enforcing**: Proper context labeling
+- **Container isolation**: Strong namespace and cgroup isolation
+- **SELinux enforcing**: Proper context labeling (`:Z` mounts)
 - **Isolated storage**: Dedicated paths under `/var/lib/oxidized`
 - **No secrets in repo**: Credentials managed via `.env` file
-- **Read-only rootfs**: Container filesystem is immutable
+- **Minimal capabilities**: Only SETUID/SETGID for init system
+- **NoNewPrivileges**: Prevents privilege escalation
+
+**Note**: See [DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md) for container security considerations.
 
 ---
 
@@ -582,17 +585,27 @@ sudo tar -czf oxidized-backup-$(date +%Y%m%d).tar.gz /var/lib/oxidized
 
 This deployment includes multiple security hardening measures:
 
-- **Non-root container**: Runs as dedicated system user (UID 2000)
-- **Read-only rootfs**: Container filesystem is immutable
-- **No capabilities**: All Linux capabilities dropped
+- **Container isolation**: Strong namespace and cgroup isolation
 - **SELinux enforcing**: Proper context labeling (`:Z` mounts)
 - **Network isolation**: Dedicated Podman network
+- **Minimal capabilities**: Only SETUID/SETGID (required for init system)
+- **NoNewPrivileges**: Prevents privilege escalation within container
 - **Restricted permissions**:
   - Config files: `640`
   - Credentials: `600`
   - Directories: `750`
 - **No secrets in repo**: All credentials in `.env` (Git-ignored)
 - **Version pinned**: Explicit container versions
+- **Resource limits**: CPU and memory constraints enforced
+
+**Container Security Note**: The Oxidized container uses baseimage-docker with an init system that requires root privileges inside the container. However, the container remains securely isolated through:
+- Namespace isolation (PID, network, mount, IPC, UTS)
+- Cgroup resource limits
+- SELinux mandatory access controls
+- NoNewPrivileges flag
+- Dedicated bridge network
+
+For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md).
 
 ### Security Best Practices
 
@@ -654,6 +667,14 @@ This deployment includes multiple security hardening measures:
 
 ### Repository Documentation
 
+> **📖 Not sure which doc to read?** See **[DOCUMENTATION-GUIDE.md](DOCUMENTATION-GUIDE.md)** for a complete guide to our documentation structure.
+
+- **[QUICK-START.md](QUICK-START.md)** - ⚡ Quick reference guide for deployment and common tasks
+- **[CREDENTIALS-GUIDE.md](CREDENTIALS-GUIDE.md)** - 🔑 **IMPORTANT:** Understanding the TWO sets of credentials
+- **[DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md)** - ⭐ Deployment improvements, testing notes, and troubleshooting
+- **[AUTHENTICATION-SETUP.md](AUTHENTICATION-SETUP.md)** - 🔒 Web UI login configuration and management
+- **[SECURITY-AUTHENTICATION.md](SECURITY-AUTHENTICATION.md)** - ⚠️ Security options and considerations
+- **[FIREWALL-IMPLEMENTATION.md](FIREWALL-IMPLEMENTATION.md)** - Automatic firewall configuration details
 - **[README-OXIDIZED.md](README-OXIDIZED.md)** - Oxidized usage, configuration, and troubleshooting
 - **[docs/INSTALL.md](docs/INSTALL.md)** - Detailed installation guide
 - **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** - Configuration deep-dive

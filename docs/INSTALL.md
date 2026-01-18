@@ -1,6 +1,9 @@
 # 🚀 Installation Guide
 
-This guide provides **step-by-step instructions** to deploy containerized Oxidized on RHEL 10 using Podman Quadlets and systemd.
+> **⚡ Quick Start**: For automated installation, use `sudo ./scripts/deploy.sh` instead!
+> See [QUICK-START.md](../QUICK-START.md) for the fastest deployment method.
+>
+> This guide provides **manual step-by-step instructions** for advanced users who want to understand or customize the deployment process, or for troubleshooting purposes.
 
 ---
 

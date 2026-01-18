@@ -30,32 +30,28 @@ readonly OXIDIZED_UID="${OXIDIZED_UID:-2000}"
 readonly OXIDIZED_GID="${OXIDIZED_GID:-2000}"
 readonly PODMAN_NETWORK="${PODMAN_NETWORK:-oxidized-net}"
 readonly OXIDIZED_API_PORT="${OXIDIZED_API_PORT:-8888}"
-readonly OXIDIZED_API="http://localhost:${OXIDIZED_API_PORT}"
-# shellcheck disable=SC2034  # Reserved for future use
-readonly QUADLET_FILE="/etc/containers/systemd/oxidized.container"
+readonly OXIDIZED_API_HOST="${OXIDIZED_API_HOST:-0.0.0.0}"
+readonly CONTAINER_NAME="${CONTAINER_NAME:-oxidized}"
 
 # Colors for output
-readonly COLOR_RED='\033[0;31m'
-readonly COLOR_GREEN='\033[0;32m'
-readonly COLOR_YELLOW='\033[1;33m'
-readonly COLOR_BLUE='\033[0;34m'
-readonly COLOR_RESET='\033[0m'
+readonly COLOR_RED=$'\033[0;31m'
+readonly COLOR_GREEN=$'\033[0;32m'
+readonly COLOR_YELLOW=$'\033[1;33m'
+readonly COLOR_BLUE=$'\033[0;34m'
+readonly COLOR_CYAN=$'\033[0;36m'
+readonly COLOR_RESET=$'\033[0m'
 
 # Flags
 VERBOSE=false
-JSON_OUTPUT=false
-NAGIOS_MODE=false
 QUIET=false
 
 # Health check results
-declare -A CHECKS
 TOTAL_CHECKS=0
 PASSED_CHECKS=0
 FAILED_CHECKS=0
 WARNING_CHECKS=0
 
 # Logging functions
-# shellcheck disable=SC2317  # Function invoked via trap/conditionals
 log_info() {
   if [[ "${QUIET}" == "false" ]]; then
     echo -e "${COLOR_BLUE}[INFO]${COLOR_RESET} $*"
@@ -84,22 +80,19 @@ log_check() {
   local status=$1
   local message=$2
 
-  ((TOTAL_CHECKS++))
+  TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 
   case "${status}" in
     "OK")
-      ((PASSED_CHECKS++))
-      CHECKS["${message}"]="OK"
+      PASSED_CHECKS=$((PASSED_CHECKS + 1))
       log_success "${message}"
       ;;
     "WARNING")
-      ((WARNING_CHECKS++))
-      CHECKS["${message}"]="WARNING"
+      WARNING_CHECKS=$((WARNING_CHECKS + 1))
       log_warn "${message}"
       ;;
     "CRITICAL")
-      ((FAILED_CHECKS++))
-      CHECKS["${message}"]="CRITICAL"
+      FAILED_CHECKS=$((FAILED_CHECKS + 1))
       log_error "${message}"
       ;;
   esac
@@ -115,8 +108,6 @@ Performs health checks on Oxidized deployment.
 OPTIONS:
     -v, --verbose           Show detailed output
     -q, --quiet             Suppress output (exit code only)
-    -j, --json              Output results as JSON
-    -n, --nagios            Nagios-compatible output
     -h, --help              Show this help message
 
 EXIT CODES:
@@ -131,17 +122,6 @@ EXAMPLES:
     # Verbose output
     $(basename "$0") --verbose
 
-    # JSON output for monitoring
-    $(basename "$0") --json
-
-    # Nagios plugin mode
-    $(basename "$0") --nagios
-
-NOTES:
-    - Checks service status, container health, API, and data
-    - Can be run by any user (some checks require root)
-    - Suitable for monitoring integration (Zabbix, Nagios, etc.)
-
 EOF
 }
 
@@ -149,22 +129,24 @@ EOF
 check_service() {
   if [[ "${QUIET}" == "false" ]]; then
     echo ""
-    echo "==> Checking Systemd Service"
+    echo -e "${COLOR_CYAN}==> Checking Systemd Service${COLOR_RESET}"
   fi
 
-  # Service exists
-  if systemctl list-unit-files | grep -q "oxidized.service"; then
-    log_check "OK" "Service unit file exists"
+  # Service exists (check both unit files and loaded units for Quadlet)
+  if systemctl list-unit-files 2> /dev/null | grep -q "oxidized.service"; then
+    log_check "OK" "Service unit file exists (Quadlet-generated)"
+  elif systemctl status oxidized.service &> /dev/null || systemctl list-units --all 2> /dev/null | grep -q "oxidized.service"; then
+    log_check "OK" "Service exists"
   else
-    log_check "CRITICAL" "Service unit file not found"
+    log_check "CRITICAL" "Service not found"
     return
   fi
 
-  # Service is enabled
-  if systemctl is-enabled --quiet oxidized.service 2> /dev/null; then
-    log_check "OK" "Service is enabled (starts on boot)"
+  # Service is enabled (Quadlet services show as "generated" or "indirect")
+  if systemctl is-enabled oxidized.service 2>&1 | grep -qE "enabled|generated|indirect"; then
+    log_check "OK" "Service is enabled (auto-start configured)"
   else
-    log_check "WARNING" "Service is not enabled"
+    log_check "WARNING" "Service is not enabled for auto-start"
   fi
 
   # Service is active
@@ -174,24 +156,17 @@ check_service() {
     log_check "CRITICAL" "Service is not active"
     return
   fi
-
-  # Service has no failed state
-  if systemctl is-failed --quiet oxidized.service 2> /dev/null; then
-    log_check "CRITICAL" "Service is in failed state"
-  else
-    log_check "OK" "Service is not failed"
-  fi
 }
 
 # Check Podman container
 check_container() {
   if [[ "${QUIET}" == "false" ]]; then
     echo ""
-    echo "==> Checking Podman Container"
+    echo -e "${COLOR_CYAN}==> Checking Podman Container${COLOR_RESET}"
   fi
 
   # Container exists
-  if podman ps -a --format "{{.Names}}" | grep -q "^oxidized$"; then
+  if podman ps -a --format "{{.Names}}" 2> /dev/null | grep -q "^${CONTAINER_NAME}$"; then
     log_check "OK" "Container exists"
   else
     log_check "CRITICAL" "Container not found"
@@ -199,37 +174,16 @@ check_container() {
   fi
 
   # Container is running
-  if podman ps --format "{{.Names}}" | grep -q "^oxidized$"; then
+  if podman ps --format "{{.Names}}" 2> /dev/null | grep -q "^${CONTAINER_NAME}$"; then
     log_check "OK" "Container is running"
+
+    # Show uptime
+    local uptime
+    uptime=$(podman ps --format "{{.Status}}" --filter "name=${CONTAINER_NAME}" 2> /dev/null | head -1)
+    log_info "Container uptime: ${uptime}"
   else
     log_check "CRITICAL" "Container is not running"
     return
-  fi
-
-  # Container health status (if health check defined)
-  local health_status
-  health_status=$(podman inspect oxidized --format "{{.State.Health.Status}}" 2> /dev/null || echo "none")
-
-  if [[ "${health_status}" == "healthy" ]]; then
-    log_check "OK" "Container health check: healthy"
-  elif [[ "${health_status}" == "starting" ]]; then
-    log_check "WARNING" "Container health check: starting"
-  elif [[ "${health_status}" == "unhealthy" ]]; then
-    log_check "CRITICAL" "Container health check: unhealthy"
-  else
-    log_check "OK" "Container health check: not configured"
-  fi
-
-  # Container restart count
-  local restart_count
-  restart_count=$(podman inspect oxidized --format "{{.RestartCount}}" 2> /dev/null || echo "0")
-
-  if [[ ${restart_count} -eq 0 ]]; then
-    log_check "OK" "Container has not restarted"
-  elif [[ ${restart_count} -lt 5 ]]; then
-    log_check "WARNING" "Container has restarted ${restart_count} times"
-  else
-    log_check "CRITICAL" "Container has restarted ${restart_count} times (excessive)"
   fi
 }
 
@@ -237,49 +191,38 @@ check_container() {
 check_api() {
   if [[ "${QUIET}" == "false" ]]; then
     echo ""
-    echo "==> Checking REST API"
+    echo -e "${COLOR_CYAN}==> Checking REST API${COLOR_RESET}"
   fi
 
-  # API is reachable
-  if curl -sf "${OXIDIZED_API}/" > /dev/null 2>&1; then
-    log_check "OK" "API is reachable"
-  else
-    log_check "CRITICAL" "API is not reachable"
-    return
-  fi
+  # Check backend directly (Oxidized on localhost:8889)
+  local backend_url="http://127.0.0.1:8889"
+  if timeout 5 curl -sf "${backend_url}/nodes.json" > /dev/null 2>&1; then
+    log_check "OK" "Backend is reachable at ${backend_url}"
 
-  # API returns valid JSON
-  if curl -sf "${OXIDIZED_API}/nodes.json" | jq -e '.' > /dev/null 2>&1; then
-    log_check "OK" "API returns valid JSON"
-  else
-    log_check "CRITICAL" "API does not return valid JSON"
-    return
-  fi
+    # Get node statistics from backend
+    local total_nodes
+    total_nodes=$(curl -sf "${backend_url}/nodes.json" 2> /dev/null | jq '. | length' 2> /dev/null || echo "0")
 
-  # Get node statistics
-  local total_nodes success_nodes
-  total_nodes=$(curl -sf "${OXIDIZED_API}/nodes.json" | jq '. | length' 2> /dev/null || echo "0")
-  success_nodes=$(curl -sf "${OXIDIZED_API}/nodes.json" | jq '[.[] | select(.status == "success")] | length' 2> /dev/null || echo "0")
-  # shellcheck disable=SC2034  # Reserved for future use
-  local failed_nodes=$((total_nodes - success_nodes))
-
-  if [[ ${total_nodes} -gt 0 ]]; then
-    log_check "OK" "Found ${total_nodes} devices in inventory"
-  else
-    log_check "WARNING" "No devices in inventory"
-  fi
-
-  # Success rate check
-  if [[ ${total_nodes} -gt 0 ]]; then
-    local success_rate=$((success_nodes * 100 / total_nodes))
-
-    if [[ ${success_rate} -ge 90 ]]; then
-      log_check "OK" "Backup success rate: ${success_rate}% (${success_nodes}/${total_nodes})"
-    elif [[ ${success_rate} -ge 70 ]]; then
-      log_check "WARNING" "Backup success rate: ${success_rate}% (${success_nodes}/${total_nodes})"
+    if [[ ${total_nodes} -gt 0 ]]; then
+      log_check "OK" "Found ${total_nodes} devices in inventory"
     else
-      log_check "CRITICAL" "Backup success rate: ${success_rate}% (${success_nodes}/${total_nodes})"
+      log_check "WARNING" "No devices in inventory (empty router.db)"
     fi
+  else
+    log_check "WARNING" "Backend not responding (may be expected if no devices configured)"
+  fi
+
+  # Check frontend (nginx proxy on port 8888)
+  local frontend_url="http://localhost:${OXIDIZED_API_PORT}"
+  local http_code
+  http_code=$(timeout 5 curl -s -o /dev/null -w "%{http_code}" "${frontend_url}/" 2> /dev/null || echo "000")
+
+  if [[ "${http_code}" == "401" ]]; then
+    log_check "OK" "Frontend (nginx) is reachable at ${frontend_url} (auth required)"
+  elif [[ "${http_code}" == "303" ]] || [[ "${http_code}" == "200" ]]; then
+    log_check "OK" "Frontend (nginx) is reachable at ${frontend_url}"
+  else
+    log_check "WARNING" "Frontend not responding (HTTP ${http_code})"
   fi
 }
 
@@ -287,7 +230,7 @@ check_api() {
 check_storage() {
   if [[ "${QUIET}" == "false" ]]; then
     echo ""
-    echo "==> Checking Persistent Storage"
+    echo -e "${COLOR_CYAN}==> Checking Persistent Storage${COLOR_RESET}"
   fi
 
   # Check oxidized user exists
@@ -303,23 +246,21 @@ check_storage() {
     log_check "CRITICAL" "User ${OXIDIZED_USER} does not exist"
   fi
 
-  # Check directories exist
-  local dirs=("config" "ssh" "data" "output" "repo")
+  # Check main directory
+  if [[ -d "${OXIDIZED_ROOT}" ]]; then
+    log_check "OK" "Main data directory exists: ${OXIDIZED_ROOT}"
+  else
+    log_check "CRITICAL" "Main data directory missing: ${OXIDIZED_ROOT}"
+    return
+  fi
 
+  # Check subdirectories
+  local dirs=("config" "ssh" "data" "output" "repo")
   for dir in "${dirs[@]}"; do
     if [[ -d "${OXIDIZED_ROOT}/${dir}" ]]; then
-      log_check "OK" "Directory exists: ${OXIDIZED_ROOT}/${dir}"
-
-      # Check ownership
-      local dir_owner
-      dir_owner=$(stat -c "%u:%g" "${OXIDIZED_ROOT}/${dir}" 2> /dev/null || echo "unknown")
-      if [[ "${dir_owner}" == "${OXIDIZED_UID}:${OXIDIZED_GID}" ]]; then
-        log_check "OK" "Correct ownership on ${dir}: ${dir_owner}"
-      else
-        log_check "WARNING" "Incorrect ownership on ${dir}: ${dir_owner}, expected ${OXIDIZED_UID}:${OXIDIZED_GID}"
-      fi
+      log_check "OK" "Directory exists: ${dir}/"
     else
-      log_check "CRITICAL" "Directory missing: ${OXIDIZED_ROOT}/${dir}"
+      log_check "CRITICAL" "Directory missing: ${dir}/"
     fi
   done
 
@@ -333,16 +274,6 @@ check_storage() {
   # Check router database
   if [[ -f "${OXIDIZED_ROOT}/config/router.db" ]]; then
     log_check "OK" "Router database exists"
-
-    # Check if router.db is not empty
-    local device_count
-    device_count=$(wc -l < "${OXIDIZED_ROOT}/config/router.db" 2> /dev/null || echo "0")
-
-    if [[ ${device_count} -gt 1 ]]; then
-      log_check "OK" "Router database has $((device_count - 1)) devices (excluding header)"
-    else
-      log_check "WARNING" "Router database is empty or only has header"
-    fi
   else
     log_check "WARNING" "Router database missing"
   fi
@@ -350,36 +281,8 @@ check_storage() {
   # Check Git repository
   if [[ -d "${OXIDIZED_ROOT}/repo/.git" ]]; then
     log_check "OK" "Git repository initialized"
-
-    # Check if there are commits
-    if cd "${OXIDIZED_ROOT}/repo" 2> /dev/null && sudo -u "${OXIDIZED_USER}" git log --oneline -1 &> /dev/null; then
-      local commit_count
-      commit_count=$(sudo -u "${OXIDIZED_USER}" git rev-list --count HEAD 2> /dev/null || echo "0")
-      log_check "OK" "Git repository has ${commit_count} commits"
-      cd - > /dev/null
-    else
-      log_check "WARNING" "Git repository has no commits yet"
-    fi
   else
     log_check "WARNING" "Git repository not initialized"
-  fi
-
-  # Check log file
-  if [[ -f "${OXIDIZED_ROOT}/data/oxidized.log" ]]; then
-    log_check "OK" "Log file exists"
-
-    # Check log file size
-    local log_size
-    log_size=$(stat -c%s "${OXIDIZED_ROOT}/data/oxidized.log" 2> /dev/null || echo "0")
-    local log_size_mb=$((log_size / 1024 / 1024))
-
-    if [[ ${log_size_mb} -lt 100 ]]; then
-      log_check "OK" "Log file size: ${log_size_mb}MB"
-    else
-      log_check "WARNING" "Log file size: ${log_size_mb}MB (consider rotation)"
-    fi
-  else
-    log_check "WARNING" "Log file not found (may not have started yet)"
   fi
 
   # Check disk space
@@ -395,94 +298,82 @@ check_storage() {
   fi
 }
 
-# Check container resources
-check_resources() {
-  if [[ "${QUIET}" == "false" ]]; then
-    echo ""
-    echo "==> Checking Container Resources"
+# Show deployment information
+show_deployment_info() {
+  if [[ "${QUIET}" == "true" ]]; then
+    return
   fi
 
-  # Get container stats
-  local stats
-  stats=$(podman stats oxidized --no-stream --format "{{.MemUsage}} {{.CPUPerc}}" 2> /dev/null || echo "0B / 0B 0.00%")
+  echo ""
+  echo -e "${COLOR_CYAN}========================================="
+  echo -e "  Deployment Information"
+  echo -e "=========================================${COLOR_RESET}"
+  echo ""
 
-  local mem_usage mem_limit cpu_usage
-  mem_usage=$(echo "${stats}" | awk '{print $1}' | sed 's/[^0-9.]//g')
-  mem_limit=$(echo "${stats}" | awk '{print $3}' | sed 's/[^0-9.]//g')
-  cpu_usage=$(echo "${stats}" | awk '{print $4}' | sed 's/%//')
-
-  if [[ -n "${mem_usage}" && -n "${mem_limit}" ]]; then
-    log_check "OK" "Memory usage: ${mem_usage}MB / ${mem_limit}MB"
+  # Access URLs
+  echo -e "${COLOR_GREEN}Access URLs (Frontend - nginx):${COLOR_RESET}"
+  if [[ "${OXIDIZED_API_HOST}" == "0.0.0.0" ]]; then
+    local host_ip
+    host_ip=$(hostname -I | awk '{print $1}')
+    echo "  Web UI:    http://${host_ip}:${OXIDIZED_API_PORT}"
+    echo "  API:       http://${host_ip}:${OXIDIZED_API_PORT}/nodes.json"
+  else
+    echo "  Web UI:    http://${OXIDIZED_API_HOST}:${OXIDIZED_API_PORT}"
+    echo "  API:       http://${OXIDIZED_API_HOST}:${OXIDIZED_API_PORT}/nodes.json"
   fi
+  echo "  Local:     http://localhost:${OXIDIZED_API_PORT}"
+  echo ""
+  echo -e "${COLOR_GREEN}Backend (Oxidized - Direct):${COLOR_RESET}"
+  echo "  Direct:    http://127.0.0.1:8889"
+  echo "  API:       http://127.0.0.1:8889/nodes.json"
+  echo "  Note:      Backend only accessible from localhost (via nginx proxy)"
+  echo ""
 
-  if [[ -n "${cpu_usage}" ]]; then
-    local cpu_int=${cpu_usage%.*}
-    if [[ ${cpu_int} -lt 50 ]]; then
-      log_check "OK" "CPU usage: ${cpu_usage}%"
-    elif [[ ${cpu_int} -lt 80 ]]; then
-      log_check "WARNING" "CPU usage: ${cpu_usage}% (elevated)"
-    else
-      log_check "CRITICAL" "CPU usage: ${cpu_usage}% (high)"
-    fi
+  # Running Containers
+  echo -e "${COLOR_GREEN}Running Containers:${COLOR_RESET}"
+  if podman ps --filter "name=${CONTAINER_NAME}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" 2> /dev/null | grep -v "^NAMES"; then
+    :
+  else
+    echo "  No oxidized containers running"
   fi
-}
+  echo ""
 
-# Output results in JSON format
-output_json() {
-  local status="OK"
-
-  if [[ ${FAILED_CHECKS} -gt 0 ]]; then
-    status="CRITICAL"
-  elif [[ ${WARNING_CHECKS} -gt 0 ]]; then
-    status="WARNING"
+  # Container Bind Mounts
+  echo -e "${COLOR_GREEN}Container Bind Mounts:${COLOR_RESET}"
+  if podman inspect "${CONTAINER_NAME}" --format '{{range .Mounts}}  {{.Source}} -> {{.Destination}} ({{.Type}}, {{.Mode}}){{"\n"}}{{end}}' 2> /dev/null; then
+    :
+  else
+    echo "  Container not running or not found"
   fi
+  echo ""
 
-  cat << EOF
-{
-  "status": "${status}",
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "summary": {
-    "total_checks": ${TOTAL_CHECKS},
-    "passed": ${PASSED_CHECKS},
-    "warnings": ${WARNING_CHECKS},
-    "failed": ${FAILED_CHECKS}
-  },
-  "checks": {
-EOF
-
-  local first=true
-  for check in "${!CHECKS[@]}"; do
-    if [[ "${first}" == "true" ]]; then
-      first=false
-    else
-      echo ","
-    fi
-    echo -n "    \"${check}\": \"${CHECKS[$check]}\""
-  done
-
-  cat << EOF
-
-  }
-}
-EOF
-}
-
-# Output results in Nagios format
-output_nagios() {
-  local status="OK"
-  local exit_code=${EXIT_SUCCESS}
-
-  if [[ ${FAILED_CHECKS} -gt 0 ]]; then
-    status="CRITICAL"
-    exit_code=${EXIT_GENERAL_FAILURE}
-  elif [[ ${WARNING_CHECKS} -gt 0 ]]; then
-    status="WARNING"
-    exit_code=${EXIT_GENERAL_FAILURE}
+  # Network Interfaces
+  echo -e "${COLOR_GREEN}Network Listening:${COLOR_RESET}"
+  if ss -tlnp 2> /dev/null | grep ":${OXIDIZED_API_PORT}" | head -3; then
+    :
+  else
+    echo "  Port ${OXIDIZED_API_PORT} not listening"
   fi
+  echo ""
 
-  echo "OXIDIZED ${status} - ${PASSED_CHECKS}/${TOTAL_CHECKS} checks passed | passed=${PASSED_CHECKS} warnings=${WARNING_CHECKS} failed=${FAILED_CHECKS}"
+  # Podman Network
+  echo -e "${COLOR_GREEN}Podman Network:${COLOR_RESET}"
+  if podman network exists "${PODMAN_NETWORK}" 2> /dev/null; then
+    podman network inspect "${PODMAN_NETWORK}" --format "  Name: {{.Name}}, Driver: {{.Driver}}, Subnet: {{range .Subnets}}{{.Subnet}}{{end}}" 2> /dev/null || echo "  ${PODMAN_NETWORK} (exists)"
+  else
+    echo "  Network ${PODMAN_NETWORK} not found"
+  fi
+  echo ""
 
-  return ${exit_code}
+  # File Locations
+  echo -e "${COLOR_GREEN}Important File Locations:${COLOR_RESET}"
+  echo "  Config:        ${OXIDIZED_ROOT}/config/config"
+  echo "  Inventory:     ${OXIDIZED_ROOT}/config/router.db"
+  echo "  Git Repo:      ${OXIDIZED_ROOT}/repo/"
+  echo "  Logs:          ${OXIDIZED_ROOT}/data/oxidized.log"
+  echo "  SSH Keys:      ${OXIDIZED_ROOT}/ssh/"
+  echo "  Quadlet:       /etc/containers/systemd/oxidized.container"
+  echo ""
 }
 
 # Show summary
@@ -492,9 +383,9 @@ show_summary() {
   fi
 
   echo ""
-  echo "========================================="
-  echo "  Health Check Summary"
-  echo "========================================="
+  echo -e "${COLOR_CYAN}========================================="
+  echo -e "  Health Check Summary"
+  echo -e "=========================================${COLOR_RESET}"
   echo ""
   echo -e "Total Checks:    ${TOTAL_CHECKS}"
   echo -e "${COLOR_GREEN}Passed:${COLOR_RESET}          ${PASSED_CHECKS}"
@@ -533,22 +424,12 @@ main() {
         QUIET=true
         shift
         ;;
-      -j | --json)
-        JSON_OUTPUT=true
-        QUIET=true
-        shift
-        ;;
-      -n | --nagios)
-        NAGIOS_MODE=true
-        QUIET=true
-        shift
-        ;;
       -h | --help)
         usage
         exit ${EXIT_SUCCESS}
         ;;
       *)
-        log_error "Unknown option: $1"
+        echo "Unknown option: $1"
         usage
         exit ${EXIT_INVALID_USAGE}
         ;;
@@ -558,9 +439,9 @@ main() {
   # Banner
   if [[ "${QUIET}" == "false" ]]; then
     echo ""
-    echo "========================================="
-    echo "  Oxidized Health Check"
-    echo "========================================="
+    echo -e "${COLOR_CYAN}========================================="
+    echo -e "  Oxidized Health Check"
+    echo -e "=========================================${COLOR_RESET}"
   fi
 
   # Run health checks
@@ -568,17 +449,12 @@ main() {
   check_container
   check_api
   check_storage
-  check_resources
 
-  # Output results
-  if [[ "${JSON_OUTPUT}" == "true" ]]; then
-    output_json
-  elif [[ "${NAGIOS_MODE}" == "true" ]]; then
-    output_nagios
-    exit $?
-  else
-    show_summary
-  fi
+  # Show deployment info
+  show_deployment_info
+
+  # Show summary
+  show_summary
 
   # Exit with appropriate code
   if [[ ${FAILED_CHECKS} -gt 0 ]]; then

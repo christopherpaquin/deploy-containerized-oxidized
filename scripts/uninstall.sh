@@ -34,11 +34,11 @@ readonly PODMAN_NETWORK="${PODMAN_NETWORK:-oxidized-net}"
 readonly CONTAINER_NAME="${CONTAINER_NAME:-oxidized}"
 
 # Colors for output
-readonly COLOR_RED='\033[0;31m'
-readonly COLOR_GREEN='\033[0;32m'
-readonly COLOR_YELLOW='\033[1;33m'
-readonly COLOR_BLUE='\033[0;34m'
-readonly COLOR_RESET='\033[0m'
+readonly COLOR_RED=$'\033[0;31m'
+readonly COLOR_GREEN=$'\033[0;32m'
+readonly COLOR_YELLOW=$'\033[1;33m'
+readonly COLOR_BLUE=$'\033[0;34m'
+readonly COLOR_RESET=$'\033[0m'
 
 # Flags
 DRY_RUN=false
@@ -201,6 +201,8 @@ remove_quadlet() {
 
   if [[ "${DRY_RUN}" == "false" ]]; then
     systemctl daemon-reload
+    # Reset any failed unit state
+    systemctl reset-failed oxidized.service 2> /dev/null || true
     log_success "Reloaded systemd daemon"
   fi
 }
@@ -221,6 +223,134 @@ remove_logrotate() {
   else
     log_info "Logrotate file not found: ${logrotate_file}"
   fi
+}
+
+# Remove firewall rule
+remove_firewall() {
+  log_step "Removing firewall configuration"
+
+  # Check if firewalld is installed and running
+  if ! command -v firewall-cmd &> /dev/null; then
+    log_info "firewalld not installed, skipping firewall cleanup"
+    return
+  fi
+
+  if ! systemctl is-active --quiet firewalld 2> /dev/null; then
+    log_info "firewalld not running, skipping firewall cleanup"
+    return
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would remove firewall rule for port ${OXIDIZED_API_PORT:-8888}/tcp"
+    return
+  fi
+
+  local port="${OXIDIZED_API_PORT:-8888}"
+
+  # Check if port is in firewall
+  if firewall-cmd --list-ports 2> /dev/null | grep -q "${port}/tcp"; then
+    log_info "Removing port ${port}/tcp from firewall..."
+    if firewall-cmd --permanent --remove-port="${port}/tcp" &> /dev/null; then
+      if firewall-cmd --reload &> /dev/null; then
+        log_success "Removed port ${port}/tcp from firewall"
+      else
+        log_warn "Failed to reload firewall (non-fatal)"
+      fi
+    else
+      log_warn "Failed to remove port from firewall (non-fatal)"
+    fi
+  else
+    log_info "Port ${port}/tcp not found in firewall"
+  fi
+}
+
+# Stop and disable nginx
+stop_nginx() {
+  log_step "Stopping nginx"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would stop and disable nginx"
+    return
+  fi
+
+  # Check if nginx is installed
+  if ! command -v nginx &> /dev/null; then
+    log_info "nginx not installed, skipping"
+    return
+  fi
+
+  # Stop nginx if running
+  if systemctl is-active --quiet nginx; then
+    if systemctl stop nginx &> /dev/null; then
+      log_success "Stopped nginx"
+    else
+      log_warn "Failed to stop nginx (non-fatal)"
+    fi
+  else
+    log_info "nginx not running"
+  fi
+
+  # Disable nginx
+  if systemctl is-enabled --quiet nginx 2> /dev/null; then
+    if systemctl disable nginx &> /dev/null; then
+      log_success "Disabled nginx"
+    else
+      log_warn "Failed to disable nginx (non-fatal)"
+    fi
+  fi
+}
+
+# Remove nginx configuration
+remove_nginx_config() {
+  log_step "Removing nginx configuration"
+
+  local nginx_config="/etc/nginx/conf.d/oxidized.conf"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would remove ${nginx_config}"
+    return
+  fi
+
+  if [[ -f "${nginx_config}" ]]; then
+    rm -f "${nginx_config}"
+    log_success "Removed: ${nginx_config}"
+  else
+    log_info "nginx config not found: ${nginx_config}"
+  fi
+
+  # Restore original nginx.conf if it exists
+  if [[ -f /etc/nginx/nginx.conf.original ]]; then
+    log_info "Restoring original nginx.conf"
+    cp /etc/nginx/nginx.conf.original /etc/nginx/nginx.conf
+    log_success "Restored original nginx.conf"
+  fi
+}
+
+# Remove nginx authentication data
+remove_nginx_auth() {
+  log_step "Removing nginx authentication data"
+
+  local nginx_dir="${OXIDIZED_ROOT}/nginx"
+
+  if [[ ! -d "${nginx_dir}" ]]; then
+    log_info "nginx directory does not exist: ${nginx_dir}"
+    return
+  fi
+
+  if [[ "${PRESERVE_DATA}" == "true" ]]; then
+    log_warn "nginx authentication data PRESERVED: ${nginx_dir}"
+    log_warn "This includes the .htpasswd file"
+    log_warn "To remove, run with --remove-data flag"
+    return
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would remove: ${nginx_dir}"
+    return
+  fi
+
+  rm -rf "${nginx_dir}"
+  log_success "Removed: ${nginx_dir}"
 }
 
 # Remove data directory
@@ -317,13 +447,16 @@ remove_user() {
     log_info "Group does not exist: ${OXIDIZED_GROUP}"
   fi
 
-  # Optionally remove home directory
+  # Remove home directory (always remove with --force)
   if [[ -d "/home/${OXIDIZED_USER}" ]]; then
-    log_warn "Home directory exists: /home/${OXIDIZED_USER}"
-    if [[ "${FORCE}" == "false" ]]; then
+    if [[ "${FORCE}" == "true" ]]; then
+      # Use ${var:?} to ensure OXIDIZED_USER is never empty
+      rm -rf "/home/${OXIDIZED_USER:?}"
+      log_success "Removed home directory: /home/${OXIDIZED_USER}"
+    else
+      log_warn "Home directory exists: /home/${OXIDIZED_USER}"
       read -rp "Remove home directory? (y/N): " remove_home
       if [[ "${remove_home}" =~ ^[Yy]$ ]]; then
-        # Use ${var:?} to ensure OXIDIZED_USER is never empty
         rm -rf "/home/${OXIDIZED_USER:?}"
         log_success "Removed home directory"
       fi
@@ -335,10 +468,9 @@ remove_user() {
 remove_image() {
   log_step "Checking container image"
 
-  local image_name="docker.io/oxidized/oxidized"
-
-  if podman images --format "{{.Repository}}" | grep -q "^${image_name}$"; then
-    log_info "Container image found: ${image_name}"
+  # Check if any oxidized images exist (any version)
+  if podman images | grep -q "oxidized/oxidized"; then
+    log_info "Container image(s) found"
 
     if [[ "${DRY_RUN}" == "true" ]]; then
       log_info "[DRY-RUN] Would optionally remove image"
@@ -346,15 +478,17 @@ remove_image() {
     fi
 
     if [[ "${FORCE}" == "false" ]]; then
-      read -rp "Remove container image? (y/N): " remove_img
+      read -rp "Remove container image(s)? (y/N): " remove_img
       if [[ "${remove_img}" =~ ^[Yy]$ ]]; then
-        podman rmi "${image_name}" || log_warn "Failed to remove some images"
+        # Remove all oxidized images (force removal)
+        podman images | grep "oxidized/oxidized" | awk '{print $3}' | xargs -r podman rmi -f 2>&1 | grep -v "Error" || true
         log_success "Removed container images"
       else
         log_info "Container image preserved"
       fi
     else
-      podman rmi "${image_name}" || log_warn "Failed to remove some images"
+      # Remove all oxidized images (force removal)
+      podman images | grep "oxidized/oxidized" | awk '{print $3}' | xargs -r podman rmi -f 2>&1 | grep -v "Error" || true
       log_success "Removed container images"
     fi
   else
@@ -473,6 +607,10 @@ main() {
   remove_network
   remove_quadlet
   remove_logrotate
+  remove_firewall
+  stop_nginx
+  remove_nginx_config
+  remove_nginx_auth
   remove_data
   remove_user
   remove_image

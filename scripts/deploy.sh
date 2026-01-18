@@ -22,11 +22,11 @@ readonly QUADLET_DIR="/etc/containers/systemd"
 readonly LOGROTATE_DIR="/etc/logrotate.d"
 
 # Colors for output
-readonly COLOR_RED='\033[0;31m'
-readonly COLOR_GREEN='\033[0;32m'
-readonly COLOR_YELLOW='\033[1;33m'
-readonly COLOR_BLUE='\033[0;34m'
-readonly COLOR_RESET='\033[0m'
+readonly COLOR_RED=$'\033[0;31m'
+readonly COLOR_GREEN=$'\033[0;32m'
+readonly COLOR_YELLOW=$'\033[1;33m'
+readonly COLOR_BLUE=$'\033[0;34m'
+readonly COLOR_RESET=$'\033[0m'
 
 # Flags
 DRY_RUN=false
@@ -74,6 +74,8 @@ validate_env() {
     "OXIDIZED_IMAGE"
     "CONTAINER_NAME"
     "PODMAN_NETWORK"
+    "NGINX_USERNAME"
+    "NGINX_PASSWORD"
   )
 
   local missing_vars=()
@@ -459,24 +461,30 @@ configure_credentials() {
 
   log_warn "Default credentials from .env: username=${OXIDIZED_USERNAME:-admin}, password=${OXIDIZED_PASSWORD:-changeme}"
 
-  read -rp "Do you want to update device credentials now? (y/N): " -n 1
-  echo
-
-  if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
-    read -rp "Enter device username: " username
-    read -rsp "Enter device password: " password
+  # Check if stdin is a terminal (interactive)
+  if [[ -t 0 ]]; then
+    read -rp "Do you want to update device credentials now? (y/N): " -n 1 REPLY
     echo
 
-    if [[ -n "${username}" && -n "${password}" ]]; then
-      sed -i "s/^username:.*/username: ${username}/" "${config_file}"
-      sed -i "s/^password:.*/password: ${password}/" "${config_file}"
-      log_success "Updated credentials in ${config_file}"
+    if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
+      read -rp "Enter device username: " username
+      read -rsp "Enter device password: " password
+      echo
+
+      if [[ -n "${username}" && -n "${password}" ]]; then
+        sed -i "s/^username:.*/username: ${username}/" "${config_file}"
+        sed -i "s/^password:.*/password: ${password}/" "${config_file}"
+        log_success "Updated credentials in ${config_file}"
+      else
+        log_warn "Empty username or password, skipping update"
+      fi
     else
-      log_warn "Empty username or password, skipping update"
+      log_info "Skipped credential update"
+      log_warn "Remember to edit ${config_file} before starting service"
     fi
   else
-    log_info "Skipped credential update"
-    log_warn "Remember to edit ${config_file} before starting service"
+    log_info "Non-interactive deployment - using credentials from .env"
+    log_warn "Edit ${config_file} to change credentials after deployment"
   fi
 }
 
@@ -562,9 +570,17 @@ install_quadlet() {
   log_info "Generating Quadlet from template..."
 
   # Determine port publishing based on configuration
+  # When nginx authentication is configured, bind to localhost only
   local port_publish=""
   if [[ "${OXIDIZED_WEB_UI:-false}" == "true" ]] || [[ -n "${OXIDIZED_API_PORT:-}" ]]; then
-    port_publish="PublishPort=${OXIDIZED_API_PORT:-8888}:8888"
+    if [[ -n "${NGINX_USERNAME:-}" ]] && [[ -n "${NGINX_PASSWORD:-}" ]]; then
+      # nginx authentication enabled - bind to localhost:8889
+      port_publish="PublishPort=127.0.0.1:8889:8888"
+      log_info "Port binding: 127.0.0.1:8889 (nginx reverse proxy will handle external access)"
+    else
+      # No nginx - expose directly
+      port_publish="PublishPort=${OXIDIZED_API_HOST:-0.0.0.0}:${OXIDIZED_API_PORT:-8888}:8888"
+    fi
   else
     port_publish="# PublishPort disabled (API/Web UI not exposed)"
   fi
@@ -645,6 +661,301 @@ pull_image() {
   fi
 }
 
+# Configure firewall
+configure_firewall() {
+  log_step "Configuring Firewall"
+
+  # Check if firewalld is installed and running
+  if ! command -v firewall-cmd &> /dev/null; then
+    log_info "firewalld not installed, skipping firewall configuration"
+    return
+  fi
+
+  if ! systemctl is-active --quiet firewalld 2> /dev/null; then
+    log_info "firewalld not running, skipping firewall configuration"
+    return
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would add firewall rule for port ${OXIDIZED_API_PORT}/tcp"
+    return
+  fi
+
+  # Check if port is already allowed
+  if firewall-cmd --list-ports 2> /dev/null | grep -q "${OXIDIZED_API_PORT}/tcp"; then
+    log_info "Port ${OXIDIZED_API_PORT}/tcp already allowed in firewall"
+    return
+  fi
+
+  # Add port to firewall
+  log_info "Adding port ${OXIDIZED_API_PORT}/tcp to firewall..."
+  if firewall-cmd --permanent --add-port="${OXIDIZED_API_PORT}/tcp" &> /dev/null; then
+    if firewall-cmd --reload &> /dev/null; then
+      log_success "Added port ${OXIDIZED_API_PORT}/tcp to firewall (permanent)"
+    else
+      log_warn "Failed to reload firewall (non-fatal)"
+    fi
+  else
+    log_warn "Failed to add port to firewall (non-fatal, may need manual configuration)"
+  fi
+}
+
+# Install nginx
+install_nginx() {
+  log_step "Installing nginx"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would install nginx and httpd-tools"
+    return
+  fi
+
+  # Check if nginx is already installed
+  if command -v nginx &> /dev/null; then
+    log_info "nginx already installed: $(nginx -v 2>&1)"
+    return
+  fi
+
+  log_info "Installing nginx and httpd-tools..."
+  if dnf install -y nginx httpd-tools &> /dev/null; then
+    log_success "Installed nginx $(nginx -v 2>&1 | cut -d/ -f2)"
+  else
+    log_error "Failed to install nginx"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+}
+
+# Configure nginx authentication
+configure_nginx_auth() {
+  log_step "Configuring nginx authentication"
+
+  local nginx_dir="${OXIDIZED_ROOT}/nginx"
+  local htpasswd_file="${nginx_dir}/.htpasswd"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would create htpasswd file at ${htpasswd_file}"
+    log_info "[DRY-RUN] Username: ${NGINX_USERNAME}"
+    return
+  fi
+
+  # Ensure parent directory is accessible by nginx
+  if [[ -d "${OXIDIZED_ROOT}" ]]; then
+    chmod 755 "${OXIDIZED_ROOT}"
+    log_info "Set permissions on ${OXIDIZED_ROOT} for nginx access"
+  fi
+
+  # Create nginx directory if it doesn't exist
+  if [[ ! -d "${nginx_dir}" ]]; then
+    mkdir -p "${nginx_dir}"
+    chmod 755 "${nginx_dir}"
+    log_info "Created directory: ${nginx_dir}"
+  else
+    chmod 755 "${nginx_dir}"
+    log_info "Updated permissions on ${nginx_dir}"
+  fi
+
+  # Set SELinux context for nginx to read files in this directory
+  if command -v semanage &> /dev/null; then
+    if ! semanage fcontext -l | grep -q "${nginx_dir}"; then
+      semanage fcontext -a -t httpd_sys_content_t "${nginx_dir}(/.*)?" &> /dev/null || true
+    fi
+    restorecon -R "${nginx_dir}" &> /dev/null || true
+    log_info "Set SELinux context for nginx access"
+  fi
+
+  # Check if htpasswd file exists
+  if [[ -f "${htpasswd_file}" ]]; then
+    log_warn "htpasswd file already exists: ${htpasswd_file}"
+    log_info "Keeping existing file (won't overwrite)"
+    # Ensure permissions are correct even if file exists
+    chmod 644 "${htpasswd_file}"
+    chcon -t httpd_sys_content_t "${htpasswd_file}" 2> /dev/null || true
+    return
+  fi
+
+  # Create htpasswd file from .env credentials
+  log_info "Creating htpasswd file for user: ${NGINX_USERNAME}"
+  if echo "${NGINX_PASSWORD}" | htpasswd -i -c "${htpasswd_file}" "${NGINX_USERNAME}" &> /dev/null; then
+    chmod 644 "${htpasswd_file}"
+    chcon -t httpd_sys_content_t "${htpasswd_file}" 2> /dev/null || true
+    log_success "Created htpasswd file: ${htpasswd_file}"
+    log_info "Web UI login: ${NGINX_USERNAME} / ${NGINX_PASSWORD}"
+  else
+    log_error "Failed to create htpasswd file"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+}
+
+# Deploy nginx configuration
+deploy_nginx_config() {
+  log_step "Deploying nginx configuration"
+
+  local config_template="${REPO_ROOT}/config/nginx/oxidized.conf.template"
+  local dst_config="/etc/nginx/conf.d/oxidized.conf"
+
+  if [[ ! -f "${config_template}" ]]; then
+    log_error "nginx config template not found: ${config_template}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would deploy nginx config from template"
+    return
+  fi
+
+  # Check if config already exists
+  if [[ -f "${dst_config}" ]]; then
+    log_warn "nginx config already exists: ${dst_config}"
+    log_warn "Backing up to ${dst_config}.backup"
+    cp "${dst_config}" "${dst_config}.backup"
+  fi
+
+  # Generate config from template
+  log_info "Generating nginx config from template..."
+  sed -e "s|{{OXIDIZED_API_PORT}}|${OXIDIZED_API_PORT}|g" \
+    -e "s|{{OXIDIZED_API_HOST}}|${OXIDIZED_API_HOST}|g" \
+    "${config_template}" > "${dst_config}"
+
+  # Fix nginx main config to avoid port 80 conflict
+  if [[ ! -f /etc/nginx/nginx.conf.original ]]; then
+    cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.original
+    log_info "Backed up original nginx.conf"
+  fi
+
+  # Create minimal nginx.conf without default server
+  cat > /etc/nginx/nginx.conf << 'NGINX_EOF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    types_hash_max_size 4096;
+
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+
+    # Load modular configuration files from the /etc/nginx/conf.d directory.
+    include /etc/nginx/conf.d/*.conf;
+}
+NGINX_EOF
+
+  # Test nginx configuration
+  if nginx -t &> /dev/null; then
+    log_success "nginx configuration is valid"
+  else
+    log_error "nginx configuration test failed"
+    nginx -t
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  log_success "Deployed nginx configuration: ${dst_config}"
+}
+
+# Configure SELinux for nginx
+configure_nginx_selinux() {
+  log_step "Configuring SELinux for nginx"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would configure SELinux for nginx"
+    return
+  fi
+
+  # Allow nginx to bind to port 8888
+  log_info "Allowing nginx to bind to port ${OXIDIZED_API_PORT}..."
+
+  # Check if port is already defined
+  if semanage port -l | grep -qE "^http_port_t.*\b${OXIDIZED_API_PORT}\b"; then
+    log_info "Port ${OXIDIZED_API_PORT} already configured as http_port_t"
+  else
+    # Try to add the port
+    local add_output
+    add_output=$(semanage port -a -t http_port_t -p tcp "${OXIDIZED_API_PORT}" 2>&1)
+    local add_result=$?
+
+    if [[ ${add_result} -eq 0 ]]; then
+      log_success "Added port ${OXIDIZED_API_PORT} as http_port_t"
+    elif echo "${add_output}" | grep -q "already defined"; then
+      # Port exists but as different type, try to modify
+      if semanage port -m -t http_port_t -p tcp "${OXIDIZED_API_PORT}" &> /dev/null; then
+        log_success "Modified port ${OXIDIZED_API_PORT} to http_port_t"
+      else
+        log_warn "Port ${OXIDIZED_API_PORT} is defined with different type"
+        log_warn "SELinux output: ${add_output}"
+      fi
+    else
+      log_warn "Failed to configure SELinux port (non-fatal)"
+      log_warn "SELinux output: ${add_output}"
+    fi
+  fi
+
+  # Allow nginx to connect to network
+  log_info "Allowing nginx to connect to backend..."
+  if setsebool -P httpd_can_network_connect 1 &> /dev/null; then
+    log_success "Configured SELinux: httpd_can_network_connect=1"
+  else
+    log_warn "Failed to set SELinux boolean (non-fatal)"
+  fi
+}
+
+# Start nginx service
+start_nginx() {
+  log_step "Starting nginx"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would enable and start nginx"
+    return
+  fi
+
+  # Enable nginx
+  if systemctl enable nginx &> /dev/null; then
+    log_success "Enabled nginx service"
+  else
+    log_warn "Failed to enable nginx (may already be enabled)"
+  fi
+
+  # Start nginx
+  if systemctl is-active --quiet nginx; then
+    log_info "nginx already running, restarting..."
+    if systemctl restart nginx &> /dev/null; then
+      log_success "Restarted nginx"
+    else
+      log_error "Failed to restart nginx"
+      systemctl status nginx
+      exit ${EXIT_GENERAL_FAILURE}
+    fi
+  else
+    if systemctl start nginx &> /dev/null; then
+      log_success "Started nginx"
+    else
+      log_error "Failed to start nginx"
+      systemctl status nginx
+      exit ${EXIT_GENERAL_FAILURE}
+    fi
+  fi
+
+  # Verify nginx is running
+  if systemctl is-active --quiet nginx; then
+    log_success "nginx is active"
+  else
+    log_error "nginx failed to start"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+}
+
 # Enable and start service
 start_service() {
   log_step "Starting Oxidized service"
@@ -659,9 +970,32 @@ start_service() {
   systemctl daemon-reload
   log_success "Reloaded systemd daemon"
 
-  # Enable service
-  systemctl enable oxidized.service
-  log_success "Enabled oxidized.service"
+  # Wait for Quadlet to generate the service file (up to 10 seconds)
+  log_info "Waiting for Quadlet to generate service file..."
+  local max_wait=10
+  local count=0
+  while [[ ${count} -lt ${max_wait} ]]; do
+    if systemctl list-unit-files oxidized.service &> /dev/null; then
+      log_success "Service file generated"
+      break
+    fi
+    sleep 1
+    ((count++))
+  done
+
+  if [[ ${count} -ge ${max_wait} ]]; then
+    log_error "Timeout waiting for Quadlet to generate service file"
+    log_error "Check Quadlet file: ${QUADLET_DIR}/oxidized.container"
+    log_error "Check systemd logs: journalctl -xe"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Enable service (Quadlet services are auto-enabled via [Install] section)
+  if systemctl enable oxidized.service 2> /dev/null; then
+    log_success "Enabled oxidized.service"
+  else
+    log_info "Service auto-enabled via Quadlet [Install] section"
+  fi
 
   # Start service
   if systemctl start oxidized.service; then
@@ -703,27 +1037,43 @@ verify_deployment() {
     exit ${EXIT_GENERAL_FAILURE}
   fi
 
-  # Check API (with retry)
-  local max_attempts=10
+  # Check backend API (Oxidized on 127.0.0.1:8889) - with retry
+  local max_attempts=3
   local attempt=1
+  local backend_responding=false
 
-  log_info "Waiting for API to be ready..."
+  log_info "Checking if Oxidized backend (127.0.0.1:8889) is ready..."
 
   while [[ ${attempt} -le ${max_attempts} ]]; do
-    if curl -sf http://localhost:8888/ > /dev/null 2>&1; then
-      log_success "API is responding"
+    if curl -sf http://127.0.0.1:8889/ > /dev/null 2>&1; then
+      log_success "Oxidized backend is responding on 127.0.0.1:8889"
+      backend_responding=true
       break
     else
-      if [[ ${attempt} -eq ${max_attempts} ]]; then
-        log_error "API is not responding after ${max_attempts} attempts"
-        log_error "Check logs with: podman logs oxidized"
-        exit ${EXIT_GENERAL_FAILURE}
+      if [[ ${attempt} -lt ${max_attempts} ]]; then
+        sleep 2
       fi
-      log_info "Waiting for API... (attempt ${attempt}/${max_attempts})"
-      sleep 3
       ((attempt++))
     fi
   done
+
+  if [[ "${backend_responding}" == "false" ]]; then
+    log_warn "Backend is not responding (this is normal if no devices are in router.db)"
+    log_info "The API will start automatically when you add devices to the inventory"
+  fi
+
+  # Check frontend (nginx on port 8888)
+  log_info "Checking if nginx frontend (localhost:8888) is ready..."
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8888/ 2> /dev/null || echo "000")
+
+  if [[ "${http_code}" == "401" ]]; then
+    log_success "nginx frontend is responding on localhost:8888 (authentication enabled)"
+  elif [[ "${http_code}" == "303" ]] || [[ "${http_code}" == "200" ]]; then
+    log_success "nginx frontend is responding on localhost:8888"
+  else
+    log_warn "nginx frontend returned HTTP ${http_code} (check nginx status)"
+  fi
 
   # Check Git repository
   if [[ -d "${OXIDIZED_ROOT}/repo/.git" ]]; then
@@ -859,9 +1209,24 @@ main() {
   install_quadlet
   install_logrotate
   pull_image
+  configure_firewall
+  install_nginx
+  configure_nginx_auth
+  deploy_nginx_config
+  configure_nginx_selinux
+  start_nginx
   start_service
   verify_deployment
   show_next_steps
+
+  # Run health check to verify deployment
+  log_step "Running Health Check"
+  if [[ -f "${SCRIPT_DIR}/health-check.sh" ]]; then
+    echo ""
+    "${SCRIPT_DIR}/health-check.sh" || log_warn "Health check completed with warnings"
+  else
+    log_warn "Health check script not found"
+  fi
 
   exit ${EXIT_SUCCESS}
 }

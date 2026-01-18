@@ -2,7 +2,8 @@
 # This file is generated from template during deployment
 # DO NOT EDIT MANUALLY - edit .env and re-run deploy.sh
 #
-# Security model: Runs as dedicated oxidized user with enhanced security constraints
+# Security model: Container runs with baseimage-docker init system
+# Note: Some hardening features are disabled to support the init system
 
 [Unit]
 Description=Oxidized Network Configuration Backup Service
@@ -21,13 +22,19 @@ ContainerName={{CONTAINER_NAME}}
 Network={{PODMAN_NETWORK}}
 
 # Security: Run as dedicated non-root user
-User={{OXIDIZED_UID}}:{{OXIDIZED_GID}}
+# User={{OXIDIZED_UID}}:{{OXIDIZED_GID}}
+# Disabled: baseimage-docker init system requires root permissions inside container
+# The container is still isolated via namespaces and cgroups
 
 # Security: Read-only root filesystem
-ReadOnly=true
+# ReadOnly=true
+# Disabled: Init system requires write access to filesystem
+# Consider switching to official oxidized container or custom entrypoint
 
-# Security: Drop all capabilities
-DropCapability=ALL
+# Security: Minimal required capabilities for init system
+# DropCapability=ALL would be ideal but init system needs user switching
+AddCapability=SETUID
+AddCapability=SETGID
 
 # Security: Prevent privilege escalation
 SecurityLabelDisable=false
@@ -36,6 +43,7 @@ NoNewPrivileges=true
 # Writable tmpfs for runtime needs
 Tmpfs=/tmp:rw,noexec,nosuid,size=64m
 Tmpfs=/run:rw,noexec,nosuid,size=32m
+Tmpfs=/etc/container_environment:rw,size=8m
 
 # Persistent storage with SELinux relabeling
 Volume={{OXIDIZED_ROOT}}/config:{{MOUNT_CONFIG}}{{SELINUX_MOUNT_OPTION}}
@@ -59,7 +67,7 @@ TimeoutStartSec=120
 TimeoutStopSec=30
 
 # Resource limits
-MemoryLimit={{MEMORY_LIMIT}}
+MemoryMax={{MEMORY_LIMIT}}
 CPUQuota={{CPU_QUOTA}}
 
 [Install]
