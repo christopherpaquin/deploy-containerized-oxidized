@@ -1,6 +1,7 @@
 # Oxidized Deployment Quick Start
 
 ## Prerequisites
+
 ```bash
 sudo dnf install -y podman git logrotate curl jq
 ```
@@ -8,6 +9,7 @@ sudo dnf install -y podman git logrotate curl jq
 ## Deploy in 3 Steps
 
 ### 1. Configure
+
 ```bash
 cd /root/deploy-containerized-oxidized
 cp env.example .env
@@ -16,11 +18,13 @@ vim .env  # Edit OXIDIZED_PASSWORD at minimum
 ```
 
 ### 2. Deploy
+
 ```bash
 sudo ./scripts/deploy.sh --skip-credentials
 ```
 
 ### 3. Verify
+
 ```bash
 sudo ./scripts/health-check.sh
 curl http://localhost:8888/nodes.json | jq
@@ -31,38 +35,48 @@ curl http://localhost:8888/nodes.json | jq
 ## Common Commands
 
 ```bash
+
 # Service Management
+
 systemctl status oxidized.service
 systemctl restart oxidized.service
 journalctl -u oxidized.service -f
 
 # Container Management
+
 podman ps
 podman logs oxidized
 podman restart oxidized
 
 # API Testing
+
 curl http://localhost:8888/nodes.json | jq
 curl http://localhost:8888/nodes.json | jq 'length'
 
 # Configuration
+
 vim /var/lib/oxidized/config/router.db
 systemctl restart oxidized.service
 
 # Monitoring
+
 watch -n 5 'curl -s http://localhost:8888/nodes.json | jq ".[].status"'
 ```
 
 ## Uninstall
 
 ```bash
+
 # Keep data (default - preserves /var/lib/oxidized)
+
 sudo ./scripts/uninstall.sh
 
 # Remove everything (prompts to backup router.db)
+
 sudo ./scripts/uninstall.sh --remove-data
 
 # Remove everything without prompts (NO BACKUP!)
+
 sudo ./scripts/uninstall.sh --force --remove-data
 ```
 
@@ -73,15 +87,19 @@ sudo ./scripts/uninstall.sh --force --remove-data
 **Every deployment automatically backs up `router.db`!**
 
 ```bash
+
 # List backups
+
 ls -lht /var/lib/oxidized/config/*.backup.*
 
 # Restore from backup
+
 sudo cp /var/lib/oxidized/config/router.db.backup.20260117_203749 \
         /var/lib/oxidized/config/router.db
 sudo systemctl restart oxidized.service
 
 # Cleanup old backups (keep last 10)
+
 cd /var/lib/oxidized/config
 ls -t router.db.backup.* | tail -n +11 | xargs -r sudo rm
 ```
@@ -102,27 +120,35 @@ See `DEVICE-MANAGEMENT.md` for full backup documentation.
 ## Troubleshooting
 
 ### Service won't start
+
 ```bash
 journalctl -u oxidized.service -n 50
 systemctl status oxidized.service
 ```
 
 ### API not responding
+
 ```bash
+
 # Check if listening
+
 ss -tlnp | grep 8888
 
 # Check config
+
 grep "rest:" /var/lib/oxidized/config/config
 
 # Should show: rest: 0.0.0.0:8888
+
 ```
 
 ### Permission errors
+
 ```bash
 ls -laZ /var/lib/oxidized
 
 # Fix container-accessed directories (must be UID 30000)
+
 chown -R 30000:30000 /var/lib/oxidized/config
 chown -R 30000:30000 /var/lib/oxidized/data
 chown -R 30000:30000 /var/lib/oxidized/repo
@@ -130,6 +156,7 @@ chown -R 30000:30000 /var/lib/oxidized/ssh
 chown -R 30000:30000 /var/lib/oxidized/output
 
 # Or re-run deploy.sh to fix all ownership automatically
+
 ./scripts/deploy.sh
 ```
 

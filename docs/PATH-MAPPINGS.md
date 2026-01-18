@@ -92,6 +92,7 @@ Quick reference for understanding how files are mapped between the host system a
 | Config by group | `/var/lib/oxidized/repo/<group>/<device>` | `/home/oxidized/.config/oxidized/repo/<group>/<device>` |
 
 **Example:**
+
 - Device: `s3560g-1` in group `lab-switches`
 - Host: `/var/lib/oxidized/repo/lab-switches/s3560g-1`
 - Container: `/home/oxidized/.config/oxidized/repo/lab-switches/s3560g-1`
@@ -123,10 +124,13 @@ Quick reference for understanding how files are mapped between the host system a
 
 To interact with these files from the host:
 ```bash
+
 # Use sudo with numeric UID
+
 sudo -u "#30000" git -C /var/lib/oxidized/repo log
 
 # Or read files directly (they're world-readable)
+
 cat /var/lib/oxidized/repo/lab-switches/s3560g-1
 ```
 
@@ -136,22 +140,29 @@ From `/etc/containers/systemd/oxidized.container`:
 
 ```ini
 [Container]
+
 # Configuration and device inventory (read/write)
+
 Volume=/var/lib/oxidized/config:/home/oxidized/.config/oxidized:Z
 
 # Git repository for backed-up configs (read/write)
+
 Volume=/var/lib/oxidized/repo:/home/oxidized/.config/oxidized/repo:Z
 
 # Logs and runtime data (read/write)
+
 Volume=/var/lib/oxidized/data:/home/oxidized/.config/oxidized/data:Z
 
 # SSH keys and Git config (read-only)
+
 Volume=/var/lib/oxidized/ssh:/home/oxidized/.ssh:Z,ro
 
 # Legacy output directory (read/write)
+
 Volume=/var/lib/oxidized/output:/home/oxidized/.config/oxidized/output:Z
 
 # Environment variables
+
 Environment=TZ=EST
 Environment=HOME=/home/oxidized
 Environment=GIT_CONFIG_GLOBAL=/home/oxidized/.ssh/.gitconfig
@@ -160,6 +171,7 @@ Environment=GIT_CONFIG_GLOBAL=/home/oxidized/.ssh/.gitconfig
 ## SELinux Context
 
 All volumes are mounted with `:Z` flag for automatic SELinux relabeling:
+
 - `:Z` - Private unshared label (container-specific)
 - Context type: `container_file_t`
 
@@ -174,64 +186,84 @@ ls -laZ /var/lib/oxidized/repo/
 ### Viewing Configuration
 
 ```bash
+
 # Main config (host)
+
 cat /var/lib/oxidized/config/config
 
 # Main config (container)
+
 podman exec oxidized cat /home/oxidized/.config/oxidized/config
 
 # Device inventory (host)
+
 cat /var/lib/oxidized/config/router.db
 
 # Device inventory (container)
+
 podman exec oxidized cat /home/oxidized/.config/oxidized/router.db
 ```
 
 ### Accessing Backed-Up Configs
 
 ```bash
+
 # List all groups (host)
+
 ls /var/lib/oxidized/repo/
 
 # List devices in a group (host)
+
 ls /var/lib/oxidized/repo/lab-switches/
 
 # View device config (host)
+
 cat /var/lib/oxidized/repo/lab-switches/s3560g-1
 
 # View device config (container)
+
 podman exec oxidized cat /home/oxidized/.config/oxidized/repo/lab-switches/s3560g-1
 ```
 
 ### Git Operations
 
 ```bash
+
 # View Git log (host)
+
 sudo -u "#30000" git -C /var/lib/oxidized/repo log --oneline
 
 # View Git log (container)
+
 podman exec -u oxidized oxidized git -C /home/oxidized/.config/oxidized/repo log --oneline
 
 # View specific commit (host)
+
 sudo -u "#30000" git -C /var/lib/oxidized/repo show COMMIT_HASH
 
 # Compare versions (host)
+
 sudo -u "#30000" git -C /var/lib/oxidized/repo diff HEAD~1 HEAD
 ```
 
 ### Log Access
 
 ```bash
+
 # Tail logs (host)
+
 tail -f /var/lib/oxidized/data/oxidized.log
 
 # Tail logs (container)
+
 podman exec oxidized tail -f /home/oxidized/.config/oxidized/data/oxidized.log
 
 # View container logs (Podman)
+
 podman logs -f oxidized
 
 # View systemd logs
+
 journalctl -u oxidized.service -f
 ```
 
@@ -240,17 +272,20 @@ journalctl -u oxidized.service -f
 ### "File not found" errors
 
 1. **Check if mount exists:**
+
    ```bash
    podman inspect oxidized | jq '.[].Mounts'
    ```
 
 2. **Verify file exists on host:**
+
    ```bash
    ls -la /var/lib/oxidized/config/config
    ls -la /var/lib/oxidized/config/router.db
    ```
 
 3. **Check inside container:**
+
    ```bash
    podman exec oxidized ls -la /home/oxidized/.config/oxidized/
    ```
@@ -258,22 +293,26 @@ journalctl -u oxidized.service -f
 ### Permission denied
 
 1. **Check file ownership:**
+
    ```bash
    ls -ln /var/lib/oxidized/config/
    ```
 
 2. **Check SELinux context:**
+
    ```bash
    ls -laZ /var/lib/oxidized/config/
    ```
 
 3. **Fix ownership (if needed):**
+
    ```bash
    chown -R 30000:30000 /var/lib/oxidized/config/
    chown -R 30000:30000 /var/lib/oxidized/repo/
    ```
 
 4. **Fix SELinux context (if needed):**
+
    ```bash
    chcon -R -t container_file_t /var/lib/oxidized/
    ```
@@ -283,15 +322,21 @@ journalctl -u oxidized.service -f
 This is resolved by setting `safe.directory` in `.gitconfig`:
 
 ```bash
+
 # Check if .gitconfig exists
+
 ls -la /var/lib/oxidized/ssh/.gitconfig
 
 # Verify content
+
 cat /var/lib/oxidized/ssh/.gitconfig
 
 # Should contain:
+
 # [safe]
+
 #   directory = /home/oxidized/.config/oxidized/repo
+
 ```
 
 ## See Also

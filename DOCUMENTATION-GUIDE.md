@@ -7,6 +7,7 @@ This repository contains multiple documentation files, each serving a specific p
 ### For New Users
 
 **Start Here:**
+
 1. **[QUICK-START.md](QUICK-START.md)** ⚡
    - **Purpose**: Get Oxidized running in 3 steps
    - **Use When**: You want to deploy quickly
@@ -63,6 +64,7 @@ This repository contains multiple documentation files, each serving a specific p
    - Migration guides
 
 10. **[docs/monitoring/ZABBIX.md](docs/monitoring/ZABBIX.md)**
+
     - Zabbix monitoring setup
     - Templates and triggers
 
@@ -95,16 +97,19 @@ Need to deploy?
 ## 🚀 Recommended Reading Order
 
 ### For First-Time Deployment:
+
 1. QUICK-START.md (deployment)
 2. README.md (understanding)
 3. README-OXIDIZED.md (configuration)
 4. DEPLOYMENT-NOTES.md (troubleshooting if needed)
 
 ### For Day-to-Day Use:
+
 - QUICK-START.md (quick reference)
 - README-OXIDIZED.md (device configuration)
 
 ### For Troubleshooting:
+
 1. DEPLOYMENT-NOTES.md (common issues)
 2. README-OXIDIZED.md (Oxidized-specific)
 3. QUICK-START.md (diagnostic commands)
@@ -120,6 +125,7 @@ Each document serves a specific purpose:
 - **README-OXIDIZED**: Oxidized-specific usage (not deployment)
 
 This structure allows users to:
+
 - Get started quickly (QUICK-START)
 - Understand the system deeply (README)
 - Learn by doing manually (INSTALL)
@@ -129,6 +135,7 @@ This structure allows users to:
 ## 📝 Summary
 
 **Most users should:**
+
 1. Start with QUICK-START.md
 2. Reference README.md for understanding
 3. Use DEPLOYMENT-NOTES.md if issues arise

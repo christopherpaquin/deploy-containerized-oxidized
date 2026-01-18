@@ -7,13 +7,16 @@ Automatic firewall configuration has been added to both deployment and uninstall
 ## Problem Statement
 
 ### Issue Encountered
+
 - **Symptom**: Connection refused on port 8888 even when service was running
 - **Command**: `telnet 10.1.10.55 8888` returned "Connection refused"
 - **Root Cause**: firewalld on RHEL 10 was blocking port 8888
 - **Verification**: `firewall-cmd --list-ports` showed no ports allowed
 
 ### Why This Matters
+
 On RHEL 10 (and similar distributions), firewalld is enabled by default and blocks all ports except explicitly allowed services. Without firewall configuration:
+
 - Service runs normally (systemd shows active)
 - Container is healthy (podman shows running)
 - Port is listening (`ss -tlnp` shows 0.0.0.0:8888)
@@ -71,6 +74,7 @@ configure_firewall() {
 ```
 
 #### Key Features:
+
 1. **Smart Detection**:
    - Checks if `firewall-cmd` command exists
    - Verifies firewalld service is active
@@ -140,6 +144,7 @@ remove_firewall() {
 ```
 
 #### Key Features:
+
 1. **Clean Uninstallation**:
    - Removes firewall rule during uninstall
    - No leftover firewall configurations
@@ -166,16 +171,21 @@ remove_firewall() {
 ### Verification Commands
 
 ```bash
+
 # Check firewall status
+
 firewall-cmd --list-ports
 
 # Check service status
+
 systemctl is-active firewalld
 
 # Check port listening
+
 ss -tlnp | grep 8888
 
 # Test connection (with devices in inventory)
+
 curl http://10.1.10.55:8888/nodes.json
 telnet 10.1.10.55 8888
 ```
@@ -183,11 +193,13 @@ telnet 10.1.10.55 8888
 ### Expected Behavior
 
 #### With firewalld active and port configured:
+
 ✅ `firewall-cmd --list-ports` shows `8888/tcp`
 ✅ `ss -tlnp` shows port listening
 ✅ `telnet 10.1.10.55 8888` connects successfully (if API running)
 
 #### With firewalld not installed/not running:
+
 ✅ Scripts skip firewall configuration
 ✅ Deployment succeeds normally
 ✅ Port accessible (no firewall blocking)
@@ -199,6 +211,7 @@ telnet 10.1.10.55 8888
 Even with the firewall properly configured, you may still see "Connection refused" if the device inventory is empty. This is **normal Oxidized behavior**:
 
 **Why**: Oxidized's Puma web server (API/Web UI) only starts when there are valid devices in `router.db`. Without devices:
+
 - Service runs normally (systemd active)
 - Container is healthy (podman running)
 - Port appears to be listening (conmon process)
@@ -209,7 +222,9 @@ Even with the firewall properly configured, you may still see "Connection refuse
 ```bash
 sudo vim /var/lib/oxidized/config/router.db
 sudo systemctl restart oxidized.service
+
 # Wait ~10 seconds for Puma to start
+
 curl http://10.1.10.55:8888/nodes.json
 ```
 
@@ -229,6 +244,7 @@ curl http://10.1.10.55:8888/nodes.json
 ### Why Non-Fatal?
 
 Firewall configuration is non-fatal because:
+
 1. **Manual Configuration**: Users may want to configure firewall manually
 2. **Different Tools**: Some systems use `ufw`, `iptables`, or other firewall tools
 3. **Security Policies**: Corporate environments may have strict firewall policies
@@ -237,6 +253,7 @@ Firewall configuration is non-fatal because:
 ### Why Permanent Rules?
 
 Using `--permanent` ensures:
+
 - Rules persist across firewalld restarts
 - Rules persist across system reboots
 - Consistent behavior after maintenance
@@ -244,6 +261,7 @@ Using `--permanent` ensures:
 ### Why Check for firewalld?
 
 The scripts check for firewalld because:
+
 - Not all Linux distributions use firewalld
 - firewalld may be disabled in favor of other tools
 - Docker/container hosts often disable firewalls
@@ -252,11 +270,13 @@ The scripts check for firewalld because:
 ## Files Modified
 
 ### `/root/deploy-containerized-oxidized/scripts/deploy.sh`
+
 - Added `configure_firewall()` function (42 lines)
 - Added function call in `main()` execution flow
 - Modified `verify_deployment()` to be non-fatal for API check
 
 ### `/root/deploy-containerized-oxidized/scripts/uninstall.sh`
+
 - Added `remove_firewall()` function (33 lines)
 - Added function call in `main()` execution flow
 
@@ -265,18 +285,21 @@ The scripts check for firewalld because:
 If you prefer to configure the firewall manually:
 
 ### Add Rule
+
 ```bash
 sudo firewall-cmd --permanent --add-port=8888/tcp
 sudo firewall-cmd --reload
 ```
 
 ### Remove Rule
+
 ```bash
 sudo firewall-cmd --permanent --remove-port=8888/tcp
 sudo firewall-cmd --reload
 ```
 
 ### Verify
+
 ```bash
 sudo firewall-cmd --list-ports
 sudo firewall-cmd --list-all
@@ -287,25 +310,32 @@ sudo firewall-cmd --list-all
 ### Issue: Firewall configuration fails during deployment
 
 **Symptoms**:
+
 - Warning: "Failed to add port to firewall"
 - Deployment continues but port not accessible
 
 **Diagnosis**:
 ```bash
+
 # Check firewalld status
+
 systemctl status firewalld
 
 # Check current zone
+
 firewall-cmd --get-active-zones
 
 # Check default zone
+
 firewall-cmd --get-default-zone
 
 # List all ports in current zone
+
 firewall-cmd --list-all
 ```
 
 **Solutions**:
+
 1. Ensure firewalld is running: `sudo systemctl start firewalld`
 2. Try manual configuration (see above)
 3. Check SELinux: `sudo ausearch -m avc -ts recent`
@@ -317,13 +347,17 @@ firewall-cmd --list-all
 
 **Verification**:
 ```bash
+
 # Check firewalld status
+
 systemctl is-active firewalld
 
 # Check iptables rules (if using iptables)
+
 sudo iptables -L -n | grep 8888
 
 # Check nftables (if using nftables)
+
 sudo nft list ruleset | grep 8888
 ```
 

@@ -195,40 +195,51 @@ configurations, tracks changes using Git, and supports 130+ device models.
 **Complete deployment in 5 minutes:**
 
 ```bash
+
 # 1. Clone repository
+
 git clone https://github.com/christopherpaquin/deploy-containerized-oxidized.git
 cd deploy-containerized-oxidized
 
 # 2. Create .env file
+
 cp env.example .env
 chmod 600 .env
 
 # 3. Edit .env (REQUIRED: change OXIDIZED_PASSWORD)
+
 vim .env
 
 # 4. Validate configuration
+
 ./scripts/validate-env.sh
 
 # 5. Deploy (creates user, directories, installs service)
+
 sudo ./scripts/deploy.sh
 
 # 6. Verify deployment
+
 sudo ./scripts/health-check.sh
 ```
 
 **Post-deployment**:
 
 ```bash
+
 # Create device inventory
+
 sudo cp inventory/router.db.template /var/lib/oxidized/config/router.db
 sudo vim /var/lib/oxidized/config/router.db
 sudo chown 30000:30000 /var/lib/oxidized/config/router.db
 sudo chmod 644 /var/lib/oxidized/config/router.db
 
 # Restart to load inventory
+
 sudo systemctl restart oxidized.service
 
 # Check status
+
 sudo systemctl status oxidized.service
 ```
 
@@ -258,10 +269,13 @@ sudo systemctl status oxidized.service
 #### 1. Install Prerequisites
 
 ```bash
+
 # Install required packages
+
 sudo dnf install -y podman git logrotate curl jq
 
 # Verify installations
+
 podman --version
 git --version
 systemctl --version
@@ -277,23 +291,29 @@ cd deploy-containerized-oxidized
 #### 3. Configure Environment
 
 ```bash
+
 # Copy template
+
 cp env.example .env
 
 # Secure permissions (contains credentials)
+
 chmod 600 .env
 
 # Edit configuration
+
 vim .env
 ```
 
 **Required Changes**:
+
 - `OXIDIZED_PASSWORD` - Change from default "changeme"
 - `OXIDIZED_USERNAME` - Device login username
 - `GIT_USER_NAME` - Git commit author
 - `GIT_USER_EMAIL` - Git commit email
 
 **Optional Changes**:
+
 - `OXIDIZED_ROOT` - Default: `/var/lib/oxidized`
 - `POLL_INTERVAL` - Default: `3600` (1 hour)
 - `OXIDIZED_IMAGE` - Container image version
@@ -307,6 +327,7 @@ See `env.example` for all options with detailed comments.
 ```
 
 This checks for:
+
 - Missing required variables
 - Default passwords
 - Invalid paths
@@ -320,6 +341,7 @@ sudo ./scripts/deploy.sh
 ```
 
 This script:
+
 1. Creates system user (`oxidized`, UID 2000)
 2. Creates directory structure under `/var/lib/oxidized`
 3. Generates Oxidized config from templates
@@ -333,17 +355,22 @@ This script:
 #### 6. Create Device Inventory
 
 ```bash
+
 # Copy template
+
 sudo cp inventory/router.db.template /var/lib/oxidized/config/router.db
 
 # Edit with your devices
+
 sudo vim /var/lib/oxidized/config/router.db
 
 # Set permissions (CRITICAL - must be owned by container's UID)
+
 sudo chown 30000:30000 /var/lib/oxidized/config/router.db
 sudo chmod 644 /var/lib/oxidized/config/router.db
 
 # Restart service
+
 sudo systemctl restart oxidized.service
 ```
 
@@ -354,13 +381,17 @@ See [README-OXIDIZED.md - Device Inventory](README-OXIDIZED.md#-device-inventory
 #### 7. Verify Deployment
 
 ```bash
+
 # Run health check
+
 sudo ./scripts/health-check.sh
 
 # Check service status
+
 sudo systemctl status oxidized.service
 
 # View logs
+
 sudo journalctl -u oxidized.service -f
 ```
 
@@ -381,31 +412,39 @@ sudo journalctl -u oxidized.service -f
 ### Key Configuration Variables
 
 ```bash
+
 # System user (runs container)
+
 OXIDIZED_USER="oxidized"
 OXIDIZED_UID=2000
 OXIDIZED_GID=2000
 
 # Data directory (all persistent data)
+
 OXIDIZED_ROOT="/var/lib/oxidized"
 
 # Container image (pinned version)
+
 OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.30.1"
 
 # Device credentials (global defaults)
+
 OXIDIZED_USERNAME="admin"
 OXIDIZED_PASSWORD="changeme"  # CHANGE THIS!
 
 # Operational settings
+
 POLL_INTERVAL=3600  # Hourly backup (seconds)
 THREADS=30          # Parallel device connections
 TIMEOUT=20          # Device timeout (seconds)
 
 # Git configuration
+
 GIT_USER_NAME="Oxidized"
 GIT_USER_EMAIL="oxidized@example.com"
 
 # Network settings
+
 OXIDIZED_API_PORT=8888
 OXIDIZED_API_HOST="0.0.0.0"
 OXIDIZED_WEB_UI="true"
@@ -459,6 +498,7 @@ sudo ./scripts/deploy.sh
 ```
 
 **What it does**:
+
 - Creates system user and group
 - Creates directory structure
 - Generates configuration files
@@ -469,10 +509,13 @@ sudo ./scripts/deploy.sh
 
 **Options**:
 ```bash
+
 # Dry-run mode (show what would be done)
+
 sudo ./scripts/deploy.sh --dry-run
 
 # Skip validation
+
 sudo ./scripts/deploy.sh --skip-validation
 ```
 
@@ -490,6 +533,7 @@ sudo ./scripts/health-check.sh
 ```
 
 **Checks**:
+
 - System user exists
 - Directories exist with correct permissions
 - Configuration files present and valid
@@ -501,12 +545,15 @@ sudo ./scripts/health-check.sh
 - Log file accessible
 
 **Exit codes**:
+
 - `0` = All checks passed
 - `1` = One or more checks failed
 
 **Use in monitoring**:
 ```bash
+
 # Cron job example (check every hour)
+
 0 * * * * /path/to/deploy-containerized-oxidized/scripts/health-check.sh || mail -s "Oxidized Health Check Failed" admin@example.com
 ```
 
@@ -518,17 +565,22 @@ sudo ./scripts/health-check.sh
 
 **Usage**:
 ```bash
+
 # Remove service only (preserve data)
+
 sudo ./scripts/uninstall.sh
 
 # Remove everything including data (prompts to backup router.db)
+
 sudo ./scripts/uninstall.sh --remove-data
 
 # Remove everything without prompts (NO BACKUP!)
+
 sudo ./scripts/uninstall.sh --remove-data --force
 ```
 
 **What it removes**:
+
 - Systemd service
 - Podman Quadlet file
 - Logrotate configuration
@@ -536,6 +588,7 @@ sudo ./scripts/uninstall.sh --remove-data --force
 - System user (optional)
 
 **Safety Feature:** When using `--remove-data`, the script prompts to backup `router.db` to your home directory with a timestamp before deletion.
+
 - Data directories (only with `--purge`)
 
 **⚠️ WARNING**: `--purge` permanently deletes all backups and Git history!
@@ -552,6 +605,7 @@ sudo ./scripts/uninstall.sh --remove-data --force
 ```
 
 **Checks**:
+
 - `.env` file exists
 - Required variables present
 - No default passwords
@@ -570,12 +624,14 @@ sudo ./scripts/uninstall.sh
 ```
 
 This removes:
+
 - Systemd service
 - Podman Quadlet
 - Logrotate config
 - Container
 
 **Preserves**:
+
 - Data directories (`/var/lib/oxidized`)
 - System user
 - Container image
@@ -589,6 +645,7 @@ sudo ./scripts/uninstall.sh --remove-data
 **Safety:** You'll be prompted to backup `router.db` before deletion.
 
 **⚠️ WARNING**: This permanently deletes:
+
 - All device configurations
 - Git history
 - Logs
@@ -622,6 +679,7 @@ This deployment includes multiple security hardening measures:
 - **Resource limits**: CPU and memory constraints enforced
 
 **Container Security Note**: The Oxidized container uses baseimage-docker with an init system that requires root privileges inside the container. However, the container remains securely isolated through:
+
 - Namespace isolation (PID, network, mount, IPC, UTS)
 - Cgroup resource limits
 - SELinux mandatory access controls
@@ -633,12 +691,14 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
 ### Security Best Practices
 
 1. **Change default passwords immediately**:
+
    ```bash
    # In .env
    OXIDIZED_PASSWORD="strong_unique_password_here"
    ```
 
 2. **Use SSH keys instead of passwords** (recommended):
+
    ```bash
    sudo -u oxidized ssh-keygen -t ed25519 -f /var/lib/oxidized/ssh/id_ed25519
    sudo -u oxidized ssh-copy-id -i /var/lib/oxidized/ssh/id_ed25519.pub admin@device
@@ -647,18 +707,21 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
    📖 **For detailed SSH key setup**, see [SSH Key Authentication](README-OXIDIZED.md#ssh-key-authentication-recommended) in README-OXIDIZED.md
 
 3. **Secure the `.env` file**:
+
    ```bash
    chmod 600 .env
    # Never commit to Git
    ```
 
 4. **Secure `router.db`** (if using per-device credentials):
+
    ```bash
    sudo chmod 644 /var/lib/oxidized/config/router.db
    sudo chown 30000:30000 /var/lib/oxidized/config/router.db
    ```
 
 5. **Restrict network access**:
+
    ```bash
    # Allow only from monitoring server
    sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="10.1.1.100" port port="8888" protocol="tcp" accept'
@@ -675,6 +738,7 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
    - Monitor Oxidized's device access in device logs
 
 8. **Back up the Git repository**:
+
    ```bash
    # Push to remote Git server
    cd /var/lib/oxidized/repo
@@ -796,6 +860,7 @@ Full license text: [LICENSE](LICENSE)
 ---
 
 **Quick Links**:
+
 - [Oxidized Usage Guide](README-OXIDIZED.md)
 - [Device Inventory Setup](README-OXIDIZED.md#-device-inventory-routerdb)
 - [Service Management](README-OXIDIZED.md#-service-management)

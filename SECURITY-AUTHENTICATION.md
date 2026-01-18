@@ -5,12 +5,14 @@
 **Oxidized's Web UI does NOT have built-in user authentication.**
 
 By default, anyone who can access port 8888 can:
+
 - View all device configurations
 - See device inventory
 - Access historical configuration backups
 - Use the REST API
 
 This is a significant security consideration since device configurations often contain:
+
 - Network topology information
 - IP addressing schemes
 - VLAN configurations
@@ -34,29 +36,37 @@ Access:     Anyone on network can access
 
 **Implementation**:
 ```bash
+
 # Remove open port rule
+
 sudo firewall-cmd --permanent --remove-port=8888/tcp
 
 # Allow specific IP
+
 sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="10.1.10.50" port protocol="tcp" port="8888" accept'
 
 # Or allow subnet
+
 sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="10.1.10.0/24" port protocol="tcp" port="8888" accept'
 
 # Apply changes
+
 sudo firewall-cmd --reload
 
 # Verify
+
 sudo firewall-cmd --list-all
 ```
 
 **Pros**:
+
 - ✅ Easy to implement
 - ✅ No additional software
 - ✅ Works immediately
 - ✅ Can allow multiple IPs/subnets
 
 **Cons**:
+
 - ❌ No user-level authentication
 - ❌ Bypassed if attacker on allowed network
 - ❌ Difficult with dynamic IPs
@@ -99,36 +109,45 @@ sudo systemctl restart oxidized.service
 
 **4. Access from workstation:**
 ```bash
+
 # Create SSH tunnel
+
 ssh -L 8888:localhost:8888 root@10.1.10.55
 
 # In another terminal or browser:
+
 http://localhost:8888
 ```
 
 **For permanent tunnel (Linux/Mac):**
 ```bash
+
 # Add to ~/.ssh/config
+
 Host oxidized
     HostName 10.1.10.55
     User root
     LocalForward 8888 localhost:8888
 
 # Connect
+
 ssh oxidized
 
 # Access
+
 http://localhost:8888
 ```
 
 **For Windows:**
 Use PuTTY with local port forwarding:
+
 - Connection → SSH → Tunnels
 - Source port: 8888
 - Destination: localhost:8888
 - Click "Add"
 
 **Pros**:
+
 - ✅ Very secure (requires SSH authentication)
 - ✅ Encrypted tunnel
 - ✅ Multi-factor auth possible (SSH keys)
@@ -136,6 +155,7 @@ Use PuTTY with local port forwarding:
 - ✅ No additional software on server
 
 **Cons**:
+
 - ❌ Requires SSH tunnel each session
 - ❌ Slightly more complex for users
 - ❌ Can be forgotten (tunnel drops)
@@ -156,9 +176,11 @@ sudo dnf install -y nginx httpd-tools
 **2. Create htpasswd file:**
 ```bash
 sudo htpasswd -c /etc/nginx/.htpasswd oxidized
+
 # Enter password when prompted
 
 # Add more users
+
 sudo htpasswd /etc/nginx/.htpasswd user2
 ```
 
@@ -211,6 +233,7 @@ server {
 **4. Bind Oxidized to localhost:**
 ```bash
 sudo vim /etc/containers/systemd/oxidized.container
+
 # Change to: PublishPort=127.0.0.1:8888:8888
 
 sudo systemctl daemon-reload
@@ -219,10 +242,13 @@ sudo systemctl restart oxidized.service
 
 **5. Configure firewall:**
 ```bash
+
 # Remove direct Oxidized access
+
 sudo firewall-cmd --permanent --remove-port=8888/tcp
 
 # Allow HTTP/HTTPS
+
 sudo firewall-cmd --permanent --add-service=http
 sudo firewall-cmd --permanent --add-service=https
 sudo firewall-cmd --reload
@@ -234,6 +260,7 @@ sudo systemctl enable --now nginx
 ```
 
 **Pros**:
+
 - ✅ User-level authentication
 - ✅ Multiple users easily managed
 - ✅ SSL/TLS encryption
@@ -243,6 +270,7 @@ sudo systemctl enable --now nginx
 - ✅ Can add rate limiting
 
 **Cons**:
+
 - ❌ More complex setup
 - ❌ Additional software to maintain
 - ❌ Requires SSL certificates
@@ -256,6 +284,7 @@ sudo systemctl enable --now nginx
 
 **Implementation**:
 Oxidized server accessible only via:
+
 - Corporate VPN
 - Bastion/jump host
 - Zero-trust network
@@ -263,12 +292,14 @@ Oxidized server accessible only via:
 This is handled at the network layer and doesn't require changes to Oxidized.
 
 **Pros**:
+
 - ✅ Centralized access control
 - ✅ Works with existing infrastructure
 - ✅ Network-level security
 - ✅ Compliance-friendly
 
 **Cons**:
+
 - ❌ Requires existing VPN/bastion infrastructure
 - ❌ More complex to set up if not already in place
 
@@ -277,6 +308,7 @@ This is handled at the network layer and doesn't require changes to Oxidized.
 ## Recommendations by Environment
 
 ### Lab/Development
+
 ```
 ✓ Current open setup (if isolated network)
 ✓ OR firewall IP restriction
@@ -284,6 +316,7 @@ This is handled at the network layer and doesn't require changes to Oxidized.
 ```
 
 ### Small Production
+
 ```
 ✓ SSH Tunnel (Option 2)
 ✓ OR Firewall IP restriction (Option 1)
@@ -291,6 +324,7 @@ This is handled at the network layer and doesn't require changes to Oxidized.
 ```
 
 ### Medium Production
+
 ```
 ✓ Nginx reverse proxy (Option 3)
 ✓ SSL/TLS required
@@ -299,6 +333,7 @@ This is handled at the network layer and doesn't require changes to Oxidized.
 ```
 
 ### Enterprise
+
 ```
 ✓ VPN requirement (Option 4)
 ✓ PLUS nginx reverse proxy (Option 3)
@@ -364,19 +399,25 @@ curl http://localhost:8888/nodes.json
 
 **SSH tunnel access:**
 ```bash
+
 # SSH logs show who connected
+
 sudo tail -f /var/log/secure | grep sshd
 ```
 
 **Nginx logs:**
 ```bash
+
 # Access logs with authentication
+
 sudo tail -f /var/log/nginx/oxidized_access.log
 ```
 
 **Oxidized logs:**
 ```bash
+
 # Application logs
+
 podman logs -f oxidized
 ```
 
@@ -387,14 +428,18 @@ podman logs -f oxidized
 If you need to immediately restrict access:
 
 ```bash
+
 # Close firewall port
+
 sudo firewall-cmd --permanent --remove-port=8888/tcp
 sudo firewall-cmd --reload
 
 # Stop service
+
 sudo systemctl stop oxidized.service
 
 # View who might be connected
+
 sudo ss -tnp | grep :8888
 ```
 
@@ -403,24 +448,28 @@ sudo ss -tnp | grep :8888
 ## Additional Security Measures
 
 1. **Change default credentials** in `.env`:
+
    ```bash
    OXIDIZED_USERNAME=your-username
    OXIDIZED_PASSWORD=strong-password-here
    ```
 
 2. **Restrict router.db permissions**:
+
    ```bash
    sudo chmod 600 /var/lib/oxidized/config/router.db
    sudo chown oxidized:oxidized /var/lib/oxidized/config/router.db
    ```
 
 3. **Monitor access**:
+
    ```bash
    # Watch for connections
    watch -n 1 'ss -tnp | grep :8888'
    ```
 
 4. **Regular Git backups**:
+
    ```bash
    # Backup the Git repo regularly
    tar -czf oxidized-backup-$(date +%Y%m%d).tar.gz /var/lib/oxidized/repo/
@@ -431,6 +480,7 @@ sudo ss -tnp | grep :8888
 ## Support and Questions
 
 For security concerns or questions about implementing these options, please refer to:
+
 - Main documentation: `README.md`
 - Deployment notes: `DEPLOYMENT-NOTES.md`
 - Firewall configuration: `FIREWALL-IMPLEMENTATION.md`

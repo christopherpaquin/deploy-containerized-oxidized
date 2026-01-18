@@ -23,6 +23,7 @@ Complete guide for managing network devices in Oxidized.
 ### router.db File
 
 **Location:**
+
 - Active: `/var/lib/oxidized/config/router.db`
 - Template: `inventory/router.db.template`
 
@@ -33,6 +34,7 @@ name:ip_address:model:group:username:password
 ```
 
 **Fields:**
+
 1. **name** - Device hostname/identifier (must be unique)
 2. **ip_address** - IP address or FQDN
 3. **model** - Device type (ios, junos, eos, etc.)
@@ -56,6 +58,7 @@ firewall01:10.3.1.1:fortios:security::
 Groups are **optional** labels for organizing devices logically. The group field in `router.db` allows you to categorize devices and apply group-specific settings.
 
 **Common use cases:**
+
 - Organizational structure (core, edge, datacenter, branch)
 - Network tiers (access, distribution, core)
 - Security zones (dmz, internal, external)
@@ -154,28 +157,36 @@ firewall-edge01:10.3.1.1:fortios:firewalls::
 ### Viewing Devices by Group
 
 **Web UI:**
+
 - Navigate to `http://your-server:8888`
 - Devices are sortable by group
 - Filter by group in the interface
 
 **API:**
 ```bash
+
 # Get all devices
+
 curl http://127.0.0.1:8889/nodes.json | jq '.'
 
 # Filter by group
+
 curl http://127.0.0.1:8889/nodes.json | jq '.[] | select(.group == "core")'
 
 # Count devices per group
+
 curl http://127.0.0.1:8889/nodes.json | jq 'group_by(.group) | map({group: .[0].group, count: length})'
 ```
 
 **Command line:**
 ```bash
+
 # List devices by group
+
 grep -v "^#" /var/lib/oxidized/config/router.db | awk -F: '{print $4}' | sort | uniq -c
 
 # Show all devices in "core" group
+
 grep ":core:" /var/lib/oxidized/config/router.db
 ```
 
@@ -188,16 +199,21 @@ grep ":core:" /var/lib/oxidized/config/router.db
 **Every time you run `deploy.sh`, router.db is automatically backed up!**
 
 ```bash
+
 # When deploy.sh runs, it creates:
+
 /var/lib/oxidized/config/router.db.backup.YYYYMMDD_HHMMSS
 
 # Example:
+
 /var/lib/oxidized/config/router.db.backup.20260118_143022
 
 # This ensures you can always restore previous versions
+
 ```
 
 **Backup Features:**
+
 - ✅ Timestamped backup created on every deployment
 - ✅ Backups are never overwritten (unique timestamps)
 - ✅ Original file is preserved during deployment
@@ -205,67 +221,87 @@ grep ":core:" /var/lib/oxidized/config/router.db
 
 **Restore a Backup:**
 ```bash
+
 # List available backups
+
 ls -lh /var/lib/oxidized/config/router.db.backup.*
 
 # View backup content
+
 cat /var/lib/oxidized/config/router.db.backup.20260118_143022
 
 # Restore from backup
+
 sudo cp /var/lib/oxidized/config/router.db.backup.20260118_143022 \
         /var/lib/oxidized/config/router.db
 
 # Restart Oxidized to use restored config
+
 sudo systemctl restart oxidized.service
 ```
 
 ### Method 1: Edit router.db Directly
 
 ```bash
+
 # 1. Edit the file
+
 sudo vi /var/lib/oxidized/config/router.db
 
 # 2. Add your device
+
 my-router:10.1.1.1:ios:production::
 
 # 3. Validate syntax (optional but recommended)
+
 ./scripts/validate-router-db.sh
 
 # 4. Restart Oxidized to pick up changes
+
 sudo systemctl restart oxidized.service
 
 # 5. Test the new device
+
 ./scripts/test-device.sh my-router
 ```
 
 ### Method 2: Quick Reload (No Restart)
 
 ```bash
+
 # Edit router.db
+
 sudo vi /var/lib/oxidized/config/router.db
 
 # Send HUP signal to reload config
+
 podman exec oxidized pkill -HUP ruby
 
 # Note: This is faster but full restart is more reliable
+
 ```
 
 ### Credential Modes
 
 **Global Credentials (Recommended):**
 ```bash
+
 # Set in .env file
+
 OXIDIZED_USERNAME="netadmin"
 OXIDIZED_PASSWORD="YourPassword"
 
 # In router.db, leave username/password blank
+
 router1:10.1.1.1:ios:core::
 router2:10.1.1.2:ios:core::
 ```
 
 **Per-Device Credentials:**
 ```bash
+
 # Specify in router.db
+
 router1:10.1.1.1:ios:core:admin1:Pass123
 router2:10.1.1.2:junos:core:admin2:Pass456
 ```
@@ -279,14 +315,19 @@ router2:10.1.1.2:junos:core:admin2:Pass456
 ### Change IP Address
 
 ```bash
+
 # 1. Edit router.db
+
 sudo vi /var/lib/oxidized/config/router.db
 
 # 2. Change the IP
+
 # OLD: router1:10.1.1.1:ios:core::
+
 # NEW: router1:10.1.1.100:ios:core::
 
 # 3. Restart Oxidized
+
 sudo systemctl restart oxidized.service
 ```
 
@@ -294,42 +335,55 @@ sudo systemctl restart oxidized.service
 
 **For Global Credentials:**
 ```bash
+
 # 1. Edit .env
+
 vi .env
 
 OXIDIZED_USERNAME="newuser"
 OXIDIZED_PASSWORD="newpass"
 
 # 2. Redeploy (applies new credentials)
+
 ./scripts/deploy.sh
 ```
 
 **For Per-Device Credentials:**
 ```bash
+
 # 1. Edit router.db
+
 sudo vi /var/lib/oxidized/config/router.db
 
 # 2. Update credentials
+
 router1:10.1.1.1:ios:core:newuser:newpass
 
 # 3. Restart Oxidized
+
 sudo systemctl restart oxidized.service
 ```
 
 ### Change Device Model
 
 ```bash
+
 # 1. Edit router.db
+
 sudo vi /var/lib/oxidized/config/router.db
 
 # 2. Change model
+
 # OLD: router1:10.1.1.1:ios:core::
+
 # NEW: router1:10.1.1.1:iosxe:core::
 
 # 3. Restart Oxidized
+
 sudo systemctl restart oxidized.service
 
 # 4. Test the device
+
 ./scripts/test-device.sh router1
 ```
 
@@ -340,13 +394,17 @@ sudo systemctl restart oxidized.service
 ### Remove from Inventory
 
 ```bash
+
 # 1. Edit router.db
+
 sudo vi /var/lib/oxidized/config/router.db
 
 # 2. Delete or comment out the line
+
 # router1:10.1.1.1:ios:core::
 
 # 3. Restart Oxidized
+
 sudo systemctl restart oxidized.service
 ```
 
@@ -355,13 +413,17 @@ sudo systemctl restart oxidized.service
 ### Remove Backup History (Optional)
 
 ```bash
+
 # WARNING: This deletes all backup history for the device!
 
 # 1. Remove device from router.db
+
 # 2. Restart Oxidized
+
 sudo systemctl restart oxidized.service
 
 # 3. Remove from Git repo
+
 cd /var/lib/oxidized/repo
 sudo -u oxidized git rm <device-name>
 sudo -u oxidized git commit -m "Removed decommissioned device: <device-name>"
@@ -383,6 +445,7 @@ input:
 ```
 
 This means:
+
 1. **SSH attempted first** (secure, recommended)
 2. **Telnet as fallback** (if SSH fails)
 3. **Same credentials** used for both protocols
@@ -417,11 +480,13 @@ Telnet fallback activates automatically when SSH fails due to:
 ⚠️ **WARNING: Telnet is Insecure**
 
 Telnet transmits:
+
 - Credentials in **plaintext**
 - Configuration data **unencrypted**
 - Vulnerable to network sniffing and man-in-the-middle attacks
 
 **Best Practices:**
+
 - ✅ Use SSH whenever possible
 - ✅ Enable SSH on all modern devices
 - ✅ Restrict Telnet to isolated management VLANs
@@ -434,11 +499,14 @@ Telnet transmits:
 **No special configuration needed in `router.db`:**
 
 ```csv
+
 # Works for both SSH and Telnet
+
 device-name:192.168.1.1:ios:group:username:password
 ```
 
 Oxidized will:
+
 1. Try SSH with these credentials first
 2. If SSH fails, try Telnet with the same credentials
 3. Use whichever protocol succeeds
@@ -446,6 +514,7 @@ Oxidized will:
 ### Retry Logic
 
 **Per Connection Attempt:**
+
 - **Timeout**: 20 seconds
 - **Retries**: 3 attempts per protocol
 - **Total possible attempts**: 6 (3 SSH + 3 Telnet)
@@ -465,10 +534,13 @@ Oxidized will:
 
 **View logs:**
 ```bash
+
 # Check specific device
+
 podman logs oxidized | grep "device-name"
 
 # Live monitoring
+
 podman logs -f oxidized
 ```
 
@@ -516,6 +588,7 @@ sudo systemctl restart oxidized.service
 ### Supported Device Models
 
 Most Oxidized models support both SSH and Telnet:
+
 - ✅ Cisco IOS, IOS-XE, IOS-XR
 - ✅ Cisco NX-OS
 - ✅ Cisco ASA
@@ -577,13 +650,16 @@ retries: 3                # 3 attempts per protocol
 ```
 
 **To modify:**
+
 1. Option A: Edit `.env` and redeploy
+
    ```bash
    vi /root/deploy-containerized-oxidized/.env
    ./scripts/deploy.sh
    ```
 
 2. Option B: Edit config directly
+
    ```bash
    sudo vi /var/lib/oxidized/config/config
    sudo systemctl restart oxidized.service
@@ -596,11 +672,13 @@ If you have specific devices that **only** support Telnet and you want to skip t
 **Quick Example:**
 
 1. Edit `router.db` - set group to `legacy-telnet`:
+
    ```
    old-switch:192.168.1.10:ios:legacy-telnet::
    ```
 
 2. Edit `/var/lib/oxidized/config/config` - add group override:
+
    ```yaml
    groups:
      legacy-telnet:
@@ -609,6 +687,7 @@ If you have specific devices that **only** support Telnet and you want to skip t
    ```
 
 3. Restart service:
+
    ```bash
    sudo systemctl restart oxidized.service
    ```
@@ -616,6 +695,7 @@ If you have specific devices that **only** support Telnet and you want to skip t
 **Result:** Device will use Telnet directly, skipping SSH timeout (3-5x faster!)
 
 **📘 Complete Guide:** See `/var/lib/oxidized/docs/TELNET-CONFIGURATION.md` for:
+
 - Detailed group-based configuration
 - Per-device protocol variables
 - Performance optimization
@@ -630,11 +710,14 @@ If you have specific devices that **only** support Telnet and you want to skip t
 Use the provided test script:
 
 ```bash
+
 # Test a specific device
+
 ./scripts/test-device.sh router1
 ```
 
 **What it checks:**
+
 - ✅ Container is running
 - ✅ Device exists in router.db
 - ✅ Device is registered in Oxidized
@@ -671,19 +754,25 @@ Use the provided test script:
 
 **Test SSH connectivity:**
 ```bash
+
 # From host (as oxidized user)
+
 sudo -u oxidized ssh netadmin@10.1.1.1
 
 # From container
+
 podman exec -it oxidized ssh netadmin@10.1.1.1
 ```
 
 **Trigger backup via API:**
 ```bash
+
 # Trigger specific device backup
+
 curl -X GET http://127.0.0.1:8889/node/next/router1.json
 
 # Check all devices status
+
 curl http://127.0.0.1:8889/nodes.json | jq '.'
 ```
 
@@ -696,6 +785,7 @@ curl http://127.0.0.1:8889/nodes.json | jq '.'
 Oxidized uses an **internal scheduler** (not cron). It runs continuously and backs up devices on a configurable interval.
 
 **Default Schedule:**
+
 - Interval: 3600 seconds (1 hour)
 - All devices are backed up every hour
 - Devices are queued and processed sequentially
@@ -710,6 +800,7 @@ Oxidized uses an **internal scheduler** (not cron). It runs continuously and bac
 interval: 3600  # Seconds between backup cycles (default: 1 hour)
 
 # Other timing settings
+
 timeout: 20     # Seconds to wait for device response
 retries: 3      # Number of retry attempts on failure
 ```
@@ -717,20 +808,29 @@ retries: 3      # Number of retry attempts on failure
 ### Change Backup Frequency
 
 ```bash
+
 # 1. Edit config
+
 sudo vi /var/lib/oxidized/config/config
 
 # 2. Change interval (in seconds)
+
 # Examples:
+
 #   1800  = 30 minutes
+
 #   3600  = 1 hour (default)
+
 #   7200  = 2 hours
+
 #   14400 = 4 hours
+
 #   86400 = 24 hours
 
 interval: 1800  # Change to 30 minutes
 
 # 3. Restart Oxidized
+
 sudo systemctl restart oxidized.service
 ```
 
@@ -748,10 +848,13 @@ sudo systemctl restart oxidized.service
 ### Verify Schedule
 
 ```bash
+
 # Check current config
+
 grep "^interval:" /var/lib/oxidized/config/config
 
 # Monitor backup activity
+
 podman logs -f oxidized | grep -i "configuration updated\|starting new"
 ```
 
@@ -763,43 +866,57 @@ podman logs -f oxidized | grep -i "configuration updated\|starting new"
 
 **Primary Log File:**
 ```bash
+
 # Main Oxidized log (on host)
+
 /var/lib/oxidized/data/oxidized.log
 
 # Inside container
+
 /home/oxidized/.config/oxidized/data/oxidized.log
 ```
 
 **Container Logs (Recommended):**
 ```bash
+
 # Follow live logs
+
 podman logs -f oxidized
 
 # View recent logs
+
 podman logs --since 1h oxidized
 
 # Search logs
+
 podman logs oxidized | grep -i error
 ```
 
 **Systemd Journal:**
 ```bash
+
 # Follow live logs
+
 journalctl -u oxidized.service -f
 
 # View recent logs
+
 journalctl -u oxidized.service --since "1 hour ago"
 
 # Show errors only
+
 journalctl -u oxidized.service -p err
 ```
 
 **Oxidized Log File:**
 ```bash
+
 # On host (main log file)
+
 tail -f /var/lib/oxidized/data/oxidized.log
 
 # Inside container
+
 podman exec oxidized tail -f /home/oxidized/.config/oxidized/data/oxidized.log
 ```
 
@@ -812,6 +929,7 @@ This directory exists but is **empty** and **not used**. Oxidized writes logs to
 Oxidized logs are **automatically rotated** using system `logrotate`.
 
 **Configuration:**
+
 - Location: `/etc/logrotate.d/oxidized`
 - Rotates: `/var/lib/oxidized/data/*.log`
 - Frequency: Daily
@@ -826,22 +944,29 @@ cat /etc/logrotate.d/oxidized
 
 **Test Log Rotation:**
 ```bash
+
 # Dry run (shows what would happen)
+
 sudo logrotate -d /etc/logrotate.d/oxidized
 
 # Force rotation (for testing)
+
 sudo logrotate -f /etc/logrotate.d/oxidized
 
 # Verify rotated logs
+
 ls -lh /var/lib/oxidized/data/*.log*
 ```
 
 **Rotated Log Files:**
 ```bash
+
 # Current log
+
 /var/lib/oxidized/data/oxidized.log
 
 # Rotated logs (compressed after 2 days)
+
 /var/lib/oxidized/data/oxidized.log.1
 /var/lib/oxidized/data/oxidized.log.2.gz
 /var/lib/oxidized/data/oxidized.log.3.gz
@@ -854,9 +979,11 @@ Edit `/etc/logrotate.d/oxidized`:
 sudo vi /etc/logrotate.d/oxidized
 
 # Change this line:
+
 rotate 14    # Keep 14 days
 
 # To (for example):
+
 rotate 30    # Keep 30 days
 rotate 7     # Keep 7 days
 rotate 90    # Keep 90 days
@@ -864,23 +991,30 @@ rotate 90    # Keep 90 days
 
 **Manual Log Cleanup:**
 ```bash
+
 # Delete old compressed logs
+
 sudo rm /var/lib/oxidized/data/*.log.*.gz
 
 # Keep only last 5 rotations
+
 cd /var/lib/oxidized/data
 ls -t oxidized.log.* | tail -n +6 | xargs -r sudo rm
 ```
 
 **Log Size Monitoring:**
 ```bash
+
 # Check current log size
+
 du -h /var/lib/oxidized/data/oxidized.log
 
 # Check all logs (including rotated)
+
 du -sh /var/lib/oxidized/data/*.log*
 
 # Monitor log growth
+
 watch -n 5 'du -h /var/lib/oxidized/data/oxidized.log'
 ```
 
@@ -893,36 +1027,45 @@ Configuration updated for <device-name>
 
 **Connection Errors:**
 ```
+
 # Device unreachable
+
 connect failed: <device-ip> port 22: Connection refused
 connect failed: <device-ip> port 22: No route to host
 
 # Authentication failed
+
 Authentication failed for <device-name>
 Bad password: <device-name>
 
 # Timeout
+
 Timeout on <device-name>
 ```
 
 **Configuration Errors:**
 ```
+
 # Device not in router.db
+
 unknown model: <model-name>
 
 # Invalid credentials
+
 Login failed: <device-name>
 ```
 
 ### Troubleshooting Device Issues
 
 **Device Not Appearing in Web UI:**
+
 1. Check if device is in router.db
 2. Verify Oxidized has restarted: `systemctl restart oxidized.service`
 3. Check logs: `podman logs oxidized | grep <device-name>`
 4. Wait for initial backup cycle (up to `interval` seconds)
 
 **Authentication Failures:**
+
 1. Verify credentials in `.env` or `router.db`
 2. Test SSH manually: `ssh user@device-ip`
 3. Check device logs for login attempts
@@ -931,6 +1074,7 @@ Login failed: <device-name>
 **SSH Cipher/Algorithm Errors (Legacy Devices):**
 
 Many older network devices only support legacy SSH ciphers and algorithms that modern SSH clients reject by default. You'll see errors like:
+
 - `no matching cipher found`
 - `no matching key exchange method found`
 - `no matching MAC found`
@@ -943,6 +1087,7 @@ Your deployment already has `ssh: secure: false` in the config, which enables le
 **Solution 2: Let Telnet Fallback Handle It**
 
 The easiest solution: Do nothing! Oxidized will:
+
 1. Try SSH with legacy algorithms
 2. If SSH still fails → automatically try Telnet
 3. Connect via Telnet if available
@@ -951,10 +1096,13 @@ The easiest solution: Do nothing! Oxidized will:
 
 Test SSH connectivity with legacy algorithms:
 ```bash
+
 # Test modern SSH
+
 ssh admin@device-ip
 
 # Test with legacy algorithms (if Telnet isn't available)
+
 ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 \
     -oHostKeyAlgorithms=+ssh-rsa \
     -oCiphers=+aes128-cbc,aes256-cbc \
@@ -965,7 +1113,9 @@ ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 \
 
 If device only has Telnet enabled:
 ```
+
 # On Cisco IOS devices
+
 configure terminal
 crypto key generate rsa modulus 2048
 ip ssh version 2
@@ -977,20 +1127,25 @@ write memory
 
 **Check Logs for Cipher Errors:**
 ```bash
+
 # View detailed connection errors
+
 tail -f /var/lib/oxidized/data/oxidized.log | grep -i "cipher\|algorithm\|ssh"
 
 # Or use the test script
+
 /var/lib/oxidized/scripts/test-device.sh device-name
 ```
 
 **Connection Timeouts:**
+
 1. Verify device is reachable: `ping <device-ip>`
 2. Check SSH port: `nc -zv <device-ip> 22`
 3. Check firewall rules
 4. Increase timeout in config: `timeout: 30`
 
 **Model Not Supported:**
+
 1. Check supported models: https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model
 2. Try similar model (e.g., `ios` for many Cisco devices)
 3. Check Oxidized documentation for custom models
@@ -1007,12 +1162,14 @@ Use the provided validation script:
 ./scripts/validate-router-db.sh [path-to-router.db]
 
 # Examples:
+
 ./scripts/validate-router-db.sh
 ./scripts/validate-router-db.sh /var/lib/oxidized/config/router.db
 ./scripts/validate-router-db.sh inventory/router.db.template
 ```
 
 **What it checks:**
+
 - ✅ File exists
 - ✅ Field count (must be 6 fields)
 - ✅ Device name format (alphanumeric, hyphens, underscores, dots)
@@ -1054,16 +1211,21 @@ Errors: 0
 
 **Recommended workflow:**
 ```bash
+
 # 1. Edit router.db
+
 sudo vi /var/lib/oxidized/config/router.db
 
 # 2. Validate syntax
+
 ./scripts/validate-router-db.sh
 
 # 3. If validation passes, restart Oxidized
+
 sudo systemctl restart oxidized.service
 
 # 4. Test each new device
+
 ./scripts/test-device.sh new-device-name
 ```
 
@@ -1074,40 +1236,52 @@ sudo systemctl restart oxidized.service
 ### Common Commands
 
 ```bash
+
 # Add devices
+
 vi /var/lib/oxidized/config/router.db
 systemctl restart oxidized.service
 
 # Validate syntax
+
 /var/lib/oxidized/scripts/validate-router-db.sh
 
 # Test device
+
 /var/lib/oxidized/scripts/test-device.sh <device-name>
 
 # Health check
+
 /var/lib/oxidized/scripts/health-check.sh
 
 # View logs
+
 podman logs -f oxidized
 journalctl -u oxidized.service -f
 tail -f /var/lib/oxidized/data/oxidized.log
 
 # Test log rotation
+
 sudo logrotate -d /etc/logrotate.d/oxidized
 
 # Trigger backup
+
 curl -X GET http://127.0.0.1:8889/node/next/<device-name>.json
 
 # List devices
+
 curl http://127.0.0.1:8889/nodes.json | jq '.[].name'
 
 # List groups
+
 curl http://127.0.0.1:8889/nodes.json | jq '.[].group' | sort -u
 
 # Filter by group
+
 curl http://127.0.0.1:8889/nodes.json | jq '.[] | select(.group == "core")'
 
 # View backups
+
 ls -la /var/lib/oxidized/repo/
 git -C /var/lib/oxidized/repo log --oneline
 ```
@@ -1156,10 +1330,13 @@ These remain in the repository for deployment management:
 Every deployment automatically backs up `router.db` with a timestamp:
 
 ```bash
+
 # Run deploy
+
 ./scripts/deploy.sh
 
 # Creates backup:
+
 /var/lib/oxidized/config/router.db.backup.20260118_143022
 ```
 
@@ -1168,11 +1345,14 @@ Every deployment automatically backs up `router.db` with a timestamp:
 Create manual backups before major changes:
 
 ```bash
+
 # Create timestamped backup
+
 sudo cp /var/lib/oxidized/config/router.db \
         /var/lib/oxidized/config/router.db.backup.$(date +%Y%m%d_%H%M%S)
 
 # Create named backup
+
 sudo cp /var/lib/oxidized/config/router.db \
         /var/lib/oxidized/config/router.db.before-production-change
 ```
@@ -1180,50 +1360,64 @@ sudo cp /var/lib/oxidized/config/router.db \
 ### List All Backups
 
 ```bash
+
 # Show all backups with timestamps
+
 ls -lht /var/lib/oxidized/config/router.db.backup.* | head -10
 
 # Count total backups
+
 ls -1 /var/lib/oxidized/config/router.db.backup.* | wc -l
 
 # Show disk space used by backups
+
 du -h /var/lib/oxidized/config/router.db.backup.*
 ```
 
 ### Restore from Backup
 
 ```bash
+
 # 1. List backups
+
 ls -lh /var/lib/oxidized/config/router.db.backup.*
 
 # 2. Preview backup content
+
 cat /var/lib/oxidized/config/router.db.backup.20260118_143022
 
 # 3. Compare with current
+
 diff /var/lib/oxidized/config/router.db \
      /var/lib/oxidized/config/router.db.backup.20260118_143022
 
 # 4. Restore (backup current first!)
+
 sudo cp /var/lib/oxidized/config/router.db \
         /var/lib/oxidized/config/router.db.pre-restore
 sudo cp /var/lib/oxidized/config/router.db.backup.20260118_143022 \
         /var/lib/oxidized/config/router.db
 
 # 5. Restart Oxidized
+
 sudo systemctl restart oxidized.service
 ```
 
 ### Cleanup Old Backups
 
 ```bash
+
 # Keep only last 10 backups
+
 cd /var/lib/oxidized/config
 ls -t router.db.backup.* | tail -n +11 | xargs -r sudo rm
 
 # Delete backups older than 30 days
+
 sudo find /var/lib/oxidized/config -name "router.db.backup.*" -mtime +30 -delete
 
 # Delete all backups (not recommended)
+
 sudo rm /var/lib/oxidized/config/router.db.backup.*
 ```
 
