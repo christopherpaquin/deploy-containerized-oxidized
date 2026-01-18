@@ -25,6 +25,10 @@ Network={{PODMAN_NETWORK}}
 # User={{OXIDIZED_UID}}:{{OXIDIZED_GID}}
 # Disabled: baseimage-docker init system requires root permissions inside container
 # The container is still isolated via namespaces and cgroups
+#
+# NOTE: Container creates files with UID 30000 (container's internal oxidized user)
+# The deploy.sh script includes a fix_ownership() function that corrects ownership
+# after deployment to ensure files are owned by the host's oxidized user (UID {{OXIDIZED_UID}})
 
 # Security: Read-only root filesystem
 # ReadOnly=true
@@ -55,6 +59,7 @@ Volume={{OXIDIZED_ROOT}}/repo:{{MOUNT_REPO}}{{SELINUX_MOUNT_OPTION}}
 # Environment variables
 Environment=TZ={{TZ}}
 Environment=HOME=/home/oxidized
+Environment=GIT_CONFIG_GLOBAL=/home/oxidized/.ssh/.gitconfig
 
 # Port publishing (if needed)
 {{PORT_PUBLISH}}

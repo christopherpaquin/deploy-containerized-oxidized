@@ -38,30 +38,35 @@ Password: (configured in .env: NGINX_PASSWORD)
 ## What Was Implemented
 
 ### 1. Automated Deployment via .env
+
 - **Configuration**: Nginx credentials in `.env` file
 - **Variables**: `NGINX_USERNAME` and `NGINX_PASSWORD`
 - **Automated**: htpasswd file created automatically during deployment
 - **Persistent**: Stored in `/var/lib/oxidized/nginx/.htpasswd`
 
 ### 2. Nginx Reverse Proxy
+
 - **Installed**: nginx 1.26.3 (automatically)
 - **Configuration**: `/etc/nginx/conf.d/oxidized.conf` (from template)
 - **Template**: `config/nginx/oxidized.conf.template`
 - **Function**: Acts as authentication gateway in front of Oxidized
 
 ### 3. HTTP Basic Authentication
+
 - **Method**: HTTP Basic Auth (RFC 7617)
 - **Password File**: `/var/lib/oxidized/nginx/.htpasswd`
 - **User**: Created from .env during deployment (password hashed with APR1-MD5)
 - **Persistent**: Survives redeployment (not overwritten if exists)
 
-### 3. Security Configuration
+### 4. Security Configuration
+
 - **Oxidized Binding**: Changed from `10.1.10.55:8888` to `127.0.0.1:8889`
 - **Result**: Oxidized only accessible via nginx (not directly)
 - **Firewall**: Port 8888 open for nginx (Oxidized port 8889 not exposed)
 - **SELinux**: Configured to allow nginx network connections
 
-### 4. Components
+### 5. Components
+
 ```
 Internet/Network
        ↓
@@ -85,6 +90,7 @@ Oxidized Container (Puma web server)
 ## Testing
 
 ### Browser Test
+
 1. Open: `http://10.1.10.55:8888`
 2. Login prompt will appear
 3. Enter:
@@ -93,6 +99,7 @@ Oxidized Container (Puma web server)
 4. You should see the Oxidized Web UI
 
 ### Command Line Test
+
 ```bash
 # Without credentials (will fail)
 curl http://10.1.10.55:8888/
@@ -171,21 +178,25 @@ sudo cat /var/lib/oxidized/nginx/.htpasswd
 ## Service Management
 
 ### Restart nginx
+
 ```bash
 sudo systemctl restart nginx
 ```
 
 ### Restart Oxidized
+
 ```bash
 sudo systemctl restart oxidized.service
 ```
 
 ### Check nginx Status
+
 ```bash
 sudo systemctl status nginx
 ```
 
 ### View nginx Logs
+
 ```bash
 # Access log (shows login attempts)
 sudo tail -f /var/log/nginx/oxidized_access.log
@@ -195,6 +206,7 @@ sudo tail -f /var/log/nginx/oxidized_error.log
 ```
 
 ### Check nginx Configuration
+
 ```bash
 sudo nginx -t
 ```
@@ -310,7 +322,7 @@ sudo tail -50 /var/log/nginx/error.log
 ### Authentication Not Working
 ```bash
 # Verify password file exists
-sudo cat /etc/nginx/.htpasswd
+sudo cat /var/lib/oxidized/nginx/.htpasswd
 
 # Test password manually
 echo -n "oxidized2026!" | openssl passwd -apr1 -stdin
@@ -374,7 +386,7 @@ sudo firewall-cmd --reload
 
 ### Backup Password File
 ```bash
-sudo cp /etc/nginx/.htpasswd /root/oxidized-htpasswd.backup
+sudo cp /var/lib/oxidized/nginx/.htpasswd /root/oxidized-htpasswd.backup
 ```
 
 ### Backup nginx Config
@@ -384,7 +396,9 @@ sudo cp /etc/nginx/conf.d/oxidized.conf /root/oxidized-nginx.conf.backup
 
 ### Restore
 ```bash
-sudo cp /root/oxidized-htpasswd.backup /etc/nginx/.htpasswd
+sudo cp /root/oxidized-htpasswd.backup /var/lib/oxidized/nginx/.htpasswd
+sudo chown root:nginx /var/lib/oxidized/nginx/.htpasswd
+sudo chmod 640 /var/lib/oxidized/nginx/.htpasswd
 sudo cp /root/oxidized-nginx.conf.backup /etc/nginx/conf.d/oxidized.conf
 sudo systemctl restart nginx
 ```

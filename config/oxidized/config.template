@@ -31,8 +31,8 @@ web: {{OXIDIZED_WEB_UI}}
 
 # Input configuration
 input:
-  default: ssh, telnet
-  debug: false
+  default: {{INPUT_METHODS}}
+  debug: {{DEBUG}}
   ssh:
     secure: false
 
@@ -43,11 +43,39 @@ output:
     user: {{GIT_USER_NAME}}
     email: {{GIT_USER_EMAIL}}
     repo: /home/oxidized/.config/oxidized/repo
+    single_repo: true
 
-# Source configuration - CSV router database
-# Supports two credential modes:
-#   1. Per-device: Specify username/password in router.db (columns 4 & 5)
-#   2. Global: Leave columns 4 & 5 blank, uses global username/password above
+# Source configuration - Device Inventory
+# ========================================
+# Format: Colon-delimited file (often called "CSV source" in Oxidized)
+# File: router.db (colon-separated, NOT comma-separated)
+#
+# FILE LOCATION:
+#   Container: /home/oxidized/.config/oxidized/router.db
+#   Host:      /var/lib/oxidized/config/router.db
+#   Mount:     Bound via Quadlet Volume directive
+#
+# FILE FORMAT (6 fields, colon-delimited):
+#   name:ip:model:group:username:password
+#
+#   Example with device credentials:
+#     switch01:10.1.1.1:ios:datacenter:admin:password123
+#
+#   Example with global credentials (empty username/password):
+#     switch02:10.1.1.2:ios:datacenter::
+#
+# CREDENTIAL MODES:
+#   Mode A - Per-device: Specify username/password in each line (fields 4 & 5)
+#   Mode B - Global: Leave username/password blank, uses global credentials above
+#
+# FIELD MAPPING (0-indexed):
+#   0: name      - Unique device identifier (hostname)
+#   1: ip        - IP address or FQDN
+#   2: model     - Device type (ios, nxos, eos, junos, procurve, etc.)
+#   3: group     - Logical grouping (configs stored in repo/<group>/<name>)
+#   4: username  - Device login username (optional, see credential modes)
+#   5: password  - Device login password (optional, see credential modes)
+#
 source:
   default: csv
   csv:

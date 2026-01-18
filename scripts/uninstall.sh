@@ -38,6 +38,7 @@ readonly COLOR_RED=$'\033[0;31m'
 readonly COLOR_GREEN=$'\033[0;32m'
 readonly COLOR_YELLOW=$'\033[1;33m'
 readonly COLOR_BLUE=$'\033[0;34m'
+readonly COLOR_CYAN=$'\033[0;36m'
 readonly COLOR_RESET=$'\033[0m'
 
 # Flags
@@ -96,7 +97,8 @@ NOTES:
     - Must be run as root (or with sudo)
     - By default, data in ${OXIDIZED_ROOT} is PRESERVED
     - Use --remove-data to delete configs, inventory, and Git repository
-    - Backups are recommended before uninstallation
+    - When removing data, you will be prompted to backup router.db
+    - Backup is saved to your home directory with timestamp
 
 EOF
 }
@@ -199,6 +201,19 @@ remove_quadlet() {
     log_info "Quadlet file not found: ${quadlet_file}"
   fi
 
+  # Clean up backup files
+  local backup_count
+  backup_count=$(find "${QUADLET_DIR}" -name "oxidized.container.backup.*" 2> /dev/null | wc -l)
+
+  if [[ ${backup_count} -gt 0 ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would remove ${backup_count} backup file(s)"
+    else
+      find "${QUADLET_DIR}" -name "oxidized.container.backup.*" -delete
+      log_success "Removed ${backup_count} Quadlet backup file(s)"
+    fi
+  fi
+
   if [[ "${DRY_RUN}" == "false" ]]; then
     systemctl daemon-reload
     # Reset any failed unit state
@@ -222,6 +237,60 @@ remove_logrotate() {
     fi
   else
     log_info "Logrotate file not found: ${logrotate_file}"
+  fi
+}
+
+# Remove helper scripts
+remove_helper_scripts() {
+  log_step "Removing helper scripts"
+
+  local scripts_dir="${OXIDIZED_ROOT}/scripts"
+
+  if [[ -d "${scripts_dir}" ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would remove: ${scripts_dir}"
+    else
+      rm -rf "${scripts_dir}"
+      log_success "Removed: ${scripts_dir}"
+    fi
+  else
+    log_info "Helper scripts directory not found: ${scripts_dir}"
+  fi
+}
+
+# Remove documentation
+remove_documentation() {
+  log_step "Removing documentation"
+
+  local docs_dir="${OXIDIZED_ROOT}/docs"
+
+  if [[ -d "${docs_dir}" ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would remove: ${docs_dir}"
+    else
+      rm -rf "${docs_dir}"
+      log_success "Removed: ${docs_dir}"
+    fi
+  else
+    log_info "Documentation directory not found: ${docs_dir}"
+  fi
+}
+
+# Remove MOTD
+remove_motd() {
+  log_step "Removing MOTD"
+
+  local motd_file="/etc/profile.d/99-oxidized.sh"
+
+  if [[ -f "${motd_file}" ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would remove: ${motd_file}"
+    else
+      rm -f "${motd_file}"
+      log_success "Removed: ${motd_file}"
+    fi
+  else
+    log_info "MOTD not found: ${motd_file}"
   fi
 }
 
@@ -330,7 +399,7 @@ remove_nginx_config() {
 remove_nginx_auth() {
   log_step "Removing nginx authentication data"
 
-  local nginx_dir="${OXIDIZED_ROOT}/nginx"
+  local nginx_dir="${NGINX_DATA_DIR:-${OXIDIZED_ROOT}/nginx}"
 
   if [[ ! -d "${nginx_dir}" ]]; then
     log_info "nginx directory does not exist: ${nginx_dir}"
@@ -351,6 +420,48 @@ remove_nginx_auth() {
 
   rm -rf "${nginx_dir}"
   log_success "Removed: ${nginx_dir}"
+}
+
+# Remove SELinux configuration
+remove_selinux_config() {
+  log_step "Removing SELinux port labels"
+
+  # Check if SELinux tools are available
+  if ! command -v semanage &> /dev/null; then
+    log_info "semanage not available, skipping SELinux cleanup"
+    return
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would remove SELinux port labels for 8888/tcp and 8889/tcp"
+    return
+  fi
+
+  local removed=0
+
+  # Remove port 8888 (nginx frontend)
+  if semanage port -l 2> /dev/null | grep -qE "http_port_t.*\b8888\b"; then
+    if semanage port -d -t http_port_t -p tcp 8888 2> /dev/null; then
+      log_success "Removed SELinux label for port 8888/tcp"
+      ((removed++))
+    else
+      log_warn "Failed to remove SELinux label for port 8888/tcp"
+    fi
+  fi
+
+  # Remove port 8889 (Oxidized backend) if it was added
+  if semanage port -l 2> /dev/null | grep -qE "http_port_t.*\b8889\b"; then
+    if semanage port -d -t http_port_t -p tcp 8889 2> /dev/null; then
+      log_success "Removed SELinux label for port 8889/tcp"
+      ((removed++))
+    else
+      log_warn "Failed to remove SELinux label for port 8889/tcp"
+    fi
+  fi
+
+  if [[ ${removed} -eq 0 ]]; then
+    log_info "No SELinux port labels to remove"
+  fi
 }
 
 # Remove data directory
@@ -378,6 +489,61 @@ remove_data() {
   if [[ "${DRY_RUN}" == "true" ]]; then
     log_info "[DRY-RUN] Would remove: ${OXIDIZED_ROOT}"
     return
+  fi
+
+  # Offer to backup router.db before deletion
+  local router_db="${OXIDIZED_ROOT}/config/router.db"
+
+  if [[ -f "${router_db}" && "${FORCE}" == "false" ]]; then
+    echo ""
+    log_warn "Found device inventory: ${router_db}"
+
+    # Get the actual user (not root if running via sudo)
+    local actual_user="${SUDO_USER:-${USER}}"
+    local user_home
+
+    if [[ "${actual_user}" == "root" ]]; then
+      user_home="/root"
+    else
+      user_home=$(getent passwd "${actual_user}" | cut -d: -f6)
+    fi
+
+    # Generate timestamped backup filename
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_path="${user_home}/router.db.backup.${timestamp}"
+
+    echo ""
+    echo -e "${COLOR_YELLOW}Would you like to backup router.db before deletion?${COLOR_RESET}"
+    echo -e "Backup location: ${COLOR_CYAN}${backup_path}${COLOR_RESET}"
+    echo ""
+    read -rp "Backup router.db? [Y/n]: " backup_choice
+
+    # Default to yes if empty
+    backup_choice="${backup_choice:-Y}"
+
+    if [[ "${backup_choice}" =~ ^[Yy]$ ]]; then
+      if cp "${router_db}" "${backup_path}"; then
+        # Set ownership to actual user (not root)
+        if [[ "${actual_user}" != "root" ]]; then
+          chown "${actual_user}:${actual_user}" "${backup_path}" 2> /dev/null || true
+        fi
+        chmod 600 "${backup_path}"
+        log_success "Backed up router.db to: ${backup_path}"
+        echo ""
+      else
+        log_error "Failed to backup router.db"
+        echo ""
+        read -rp "Continue with deletion anyway? [y/N]: " continue_choice
+        if [[ ! "${continue_choice}" =~ ^[Yy]$ ]]; then
+          log_info "Uninstall cancelled"
+          exit 0
+        fi
+      fi
+    else
+      log_info "Skipping router.db backup"
+      echo ""
+    fi
   fi
 
   # Final confirmation for data removal
@@ -607,10 +773,14 @@ main() {
   remove_network
   remove_quadlet
   remove_logrotate
+  remove_motd
+  remove_documentation
+  remove_helper_scripts
   remove_firewall
   stop_nginx
   remove_nginx_config
   remove_nginx_auth
+  remove_selinux_config
   remove_data
   remove_user
   remove_image

@@ -224,8 +224,8 @@ sudo vim /var/lib/oxidized/config/router.db
 
 ```bash
 # CRITICAL for security - file may contain credentials
-sudo chown 2000:2000 /var/lib/oxidized/config/router.db
-sudo chmod 600 /var/lib/oxidized/config/router.db
+sudo chown 30000:30000 /var/lib/oxidized/config/router.db
+sudo chmod 644 /var/lib/oxidized/config/router.db
 ```
 
 **Step 4**: Restart service to load changes
@@ -292,8 +292,8 @@ firewall01:10.1.3.1:fortios:firewalls:fwadmin:FirewallPass789
 
 **⚠️ SECURITY WARNING**: Per-device credentials are stored in **plaintext** in `router.db`
 
-- **MUST** set permissions: `chmod 600 /var/lib/oxidized/config/router.db`
-- **MUST** set ownership: `chown 2000:2000 /var/lib/oxidized/config/router.db`
+- **MUST** set permissions: `chmod 644 /var/lib/oxidized/config/router.db`
+- **MUST** set ownership: `chown 30000:30000 /var/lib/oxidized/config/router.db` (container's UID)
 - **NEVER** commit `router.db` with real credentials to Git
 
 #### Mode 3: Mixed (Global with Exceptions)
@@ -364,7 +364,7 @@ sudo -u oxidized ssh-keygen -t ed25519 \
 # Set correct permissions (critical!)
 sudo chmod 600 /var/lib/oxidized/ssh/id_ed25519
 sudo chmod 644 /var/lib/oxidized/ssh/id_ed25519.pub
-sudo chown 2000:2000 /var/lib/oxidized/ssh/id_ed25519*
+sudo chown 30000:30000 /var/lib/oxidized/ssh/id_ed25519*
 ```
 
 ###### Option B: RSA 4096 (Traditional, Widely Supported)
@@ -379,7 +379,7 @@ sudo -u oxidized ssh-keygen -t rsa -b 4096 \
 # Set permissions
 sudo chmod 600 /var/lib/oxidized/ssh/id_rsa
 sudo chmod 644 /var/lib/oxidized/ssh/id_rsa.pub
-sudo chown 2000:2000 /var/lib/oxidized/ssh/id_rsa*
+sudo chown 30000:30000 /var/lib/oxidized/ssh/id_rsa*
 ```
 
 **Key Generation Options Explained:**
@@ -518,7 +518,7 @@ ls -la /var/lib/oxidized/ssh/
 
 # Fix permissions
 sudo chmod 600 /var/lib/oxidized/ssh/id_ed25519
-sudo chown 2000:2000 /var/lib/oxidized/ssh/id_ed25519
+sudo chown 30000:30000 /var/lib/oxidized/ssh/id_ed25519
 
 # Verify public key is on device
 ssh admin@10.1.1.1 "show run | include ssh"  # Cisco IOS
@@ -574,7 +574,7 @@ sudo cat /var/lib/oxidized/config/config | grep -A5 "ssh:"
 2. **Restrict private key permissions**:
    ```bash
    sudo chmod 600 /var/lib/oxidized/ssh/id_ed25519
-   sudo chown 2000:2000 /var/lib/oxidized/ssh/id_ed25519
+   sudo chown 30000:30000 /var/lib/oxidized/ssh/id_ed25519
    ```
 
 3. **Audit device logs** for SSH key usage:
@@ -1174,8 +1174,8 @@ sudo journalctl -u oxidized.service | grep "core-router01"
 **Solution**: Fix ownership and permissions
 
 ```bash
-sudo chown 2000:2000 /var/lib/oxidized/config/router.db
-sudo chmod 600 /var/lib/oxidized/config/router.db
+sudo chown 30000:30000 /var/lib/oxidized/config/router.db
+sudo chmod 644 /var/lib/oxidized/config/router.db
 sudo systemctl restart oxidized.service
 ```
 
@@ -1283,8 +1283,8 @@ sudo ss -tulpn | grep 8888
 **Solution**: Fix ownership and permissions
 
 ```bash
-sudo chown 2000:2000 /var/lib/oxidized/config/router.db
-sudo chmod 600 /var/lib/oxidized/config/router.db
+sudo chown 30000:30000 /var/lib/oxidized/config/router.db
+sudo chmod 644 /var/lib/oxidized/config/router.db
 sudo systemctl restart oxidized.service
 ```
 
@@ -1332,8 +1332,8 @@ sudo systemctl restart oxidized.service
 
 4. **Secure router.db file**:
    ```bash
-   sudo chmod 600 /var/lib/oxidized/config/router.db
-   sudo chown 2000:2000 /var/lib/oxidized/config/router.db
+   sudo chmod 644 /var/lib/oxidized/config/router.db
+   sudo chown 30000:30000 /var/lib/oxidized/config/router.db
    ```
 
 5. **Never commit credentials to Git**:

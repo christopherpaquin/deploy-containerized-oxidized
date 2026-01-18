@@ -81,3 +81,15 @@
 
 # ADD YOUR DEVICES BELOW:
 # =======================
+# IMPORTANT: At least one device entry is required for Oxidized to start.
+# A test device is included below to enable the Web UI. Replace it with your real devices.
+#
+# TEST DEVICE (Replace with your actual network devices)
+# This is a non-routable IP that won't cause connection attempts in your network
+test-device:192.0.2.1:ios:testing::
+#
+# NOTES:
+# - 192.0.2.0/24 is a TEST-NET reserved IP range (RFC 5737)
+# - Oxidized will attempt to connect but fail gracefully
+# - This entry allows the Web UI to start so you can verify the deployment
+# - DELETE or replace this entry with your real network devices

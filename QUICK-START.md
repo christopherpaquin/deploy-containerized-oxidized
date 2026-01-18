@@ -26,6 +26,8 @@ sudo ./scripts/health-check.sh
 curl http://localhost:8888/nodes.json | jq
 ```
 
+> **📝 Note:** A test device (`test-device:192.0.2.1`) is included by default to enable the Web UI. Replace it with your real devices in `/var/lib/oxidized/config/router.db` before production use.
+
 ## Common Commands
 
 ```bash
@@ -54,12 +56,37 @@ watch -n 5 'curl -s http://localhost:8888/nodes.json | jq ".[].status"'
 ## Uninstall
 
 ```bash
-# Keep data
+# Keep data (default - preserves /var/lib/oxidized)
 sudo ./scripts/uninstall.sh
 
-# Remove everything
+# Remove everything (prompts to backup router.db)
+sudo ./scripts/uninstall.sh --remove-data
+
+# Remove everything without prompts (NO BACKUP!)
 sudo ./scripts/uninstall.sh --force --remove-data
 ```
+
+**Note:** When using `--remove-data`, you'll be prompted to backup `router.db` to your home directory with a timestamp before deletion.
+
+## Automatic Backups
+
+**Every deployment automatically backs up `router.db`!**
+
+```bash
+# List backups
+ls -lht /var/lib/oxidized/config/*.backup.*
+
+# Restore from backup
+sudo cp /var/lib/oxidized/config/router.db.backup.20260117_203749 \
+        /var/lib/oxidized/config/router.db
+sudo systemctl restart oxidized.service
+
+# Cleanup old backups (keep last 10)
+cd /var/lib/oxidized/config
+ls -t router.db.backup.* | tail -n +11 | xargs -r sudo rm
+```
+
+See `DEVICE-MANAGEMENT.md` for full backup documentation.
 
 ## File Locations
 
@@ -94,8 +121,19 @@ grep "rest:" /var/lib/oxidized/config/config
 ### Permission errors
 ```bash
 ls -laZ /var/lib/oxidized
-chown -R 2000:2000 /var/lib/oxidized
+
+# Fix container-accessed directories (must be UID 30000)
+chown -R 30000:30000 /var/lib/oxidized/config
+chown -R 30000:30000 /var/lib/oxidized/data
+chown -R 30000:30000 /var/lib/oxidized/repo
+chown -R 30000:30000 /var/lib/oxidized/ssh
+chown -R 30000:30000 /var/lib/oxidized/output
+
+# Or re-run deploy.sh to fix all ownership automatically
+./scripts/deploy.sh
 ```
+
+**Note:** See [DIRECTORY-STRUCTURE.md](/var/lib/oxidized/docs/DIRECTORY-STRUCTURE.md) for ownership details.
 
 ## Documentation
 

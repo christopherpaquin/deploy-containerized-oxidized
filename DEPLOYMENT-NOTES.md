@@ -114,6 +114,8 @@ fi
 
 **Note**: Oxidized's Puma web server only starts when there are valid devices in router.db. This is normal behavior.
 
+**Test Device**: The `router.db.template` includes a test device (`test-device:192.0.2.1:ios:testing::`) using a non-routable TEST-NET IP address. This allows the Web UI and API to start for verification. Replace it with real devices before production use.
+
 ### 5. Uninstall Script Improvements
 
 **Issues Found**:
@@ -144,6 +146,192 @@ systemctl daemon-reload
 systemctl reset-failed oxidized.service 2>/dev/null || true
 ```
 
+### 6. Automatic Configuration Backups
+
+**Issue**: Risk of losing configuration when redeploying or making changes.
+
+**Implementation**:
+- Every deployment automatically backs up `router.db` with timestamp
+- Backups are created before any changes to ensure recovery
+- Config file and Quadlet files also backed up on changes
+- Never overwrites existing backups (unique timestamps)
+
+**Backup Locations**:
+```bash
+/var/lib/oxidized/config/router.db.backup.YYYYMMDD_HHMMSS
+/var/lib/oxidized/config/config.backup.YYYYMMDD_HHMMSS
+/etc/containers/systemd/oxidized.container.backup.YYYYMMDD_HHMMSS
+/etc/nginx/conf.d/oxidized.conf.backup
+```
+
+**Benefits**:
+- ✅ Safe redeployment without data loss
+- ✅ Easy rollback to previous configurations
+- ✅ Audit trail of changes
+- ✅ No manual backup steps required
+
+**Usage**:
+```bash
+# List backups
+ls -lht /var/lib/oxidized/config/*.backup.*
+
+# Restore from backup
+sudo cp /var/lib/oxidized/config/router.db.backup.20260118_143022 \
+        /var/lib/oxidized/config/router.db
+sudo systemctl restart oxidized.service
+
+# Cleanup old backups (keep last 10)
+ls -t /var/lib/oxidized/config/router.db.backup.* | tail -n +11 | xargs -r sudo rm
+```
+
+See `DEVICE-MANAGEMENT.md` for detailed backup management instructions.
+
+---
+
+## Container UID and File Ownership (UID 30000)
+
+### The Problem
+
+The Oxidized container uses **baseimage-docker**, which runs an internal init system. Inside the container, the oxidized process runs as **UID 30000** (the container's internal oxidized user).
+
+However, on the host system:
+- The oxidized user has **UID 2000** (created during deployment)
+- Files owned by the host's oxidized user (2000:2000) cannot be accessed by the container (UID 30000)
+- This creates a **UID mismatch** problem for bind-mounted volumes
+
+### The Solution
+
+All files that the container needs to access must be owned by **UID 30000** on the host.
+
+```bash
+# Container-accessed directories (MUST be 30000:30000)
+/var/lib/oxidized/config/  # Configuration files
+/var/lib/oxidized/data/    # Logs and runtime data
+/var/lib/oxidized/repo/    # Git repository
+/var/lib/oxidized/ssh/     # SSH keys
+/var/lib/oxidized/output/  # Output files
+
+# Host-only directories (can be 2000:2000)
+/var/lib/oxidized/docs/    # Documentation (read from host)
+/var/lib/oxidized/scripts/ # Helper scripts (run from host)
+
+# System service directories (root:root or root:nginx)
+/var/lib/oxidized/nginx/   # nginx configuration
+```
+
+### Why Not Use UID Mapping?
+
+UID mapping (`--uidmap`) was attempted but caused conflicts:
+- SELinux MCS categories prevented container access
+- The init system had permission issues
+- Complexity increased without security benefit
+
+The current solution (direct UID 30000 ownership) is:
+- ✅ Simple and reliable
+- ✅ Compatible with SELinux
+- ✅ No conflicts with init system
+- ✅ Still provides strong container isolation
+
+---
+
+## Automatic Ownership Fixes: fix_ownership() Function
+
+The `deploy.sh` script includes a **`fix_ownership()`** function that automatically corrects file ownership and SELinux contexts after the container starts.
+
+### What It Does
+
+```bash
+# Container-accessed directories → 30000:30000
+chown -R 30000:30000 /var/lib/oxidized/config
+chown -R 30000:30000 /var/lib/oxidized/data
+chown -R 30000:30000 /var/lib/oxidized/repo
+chown -R 30000:30000 /var/lib/oxidized/ssh
+chown -R 30000:30000 /var/lib/oxidized/output
+
+# Host-only directories → oxidized:oxidized (2000:2000)
+chown -R oxidized:oxidized /var/lib/oxidized/docs
+chown -R oxidized:oxidized /var/lib/oxidized/scripts
+
+# System service directories → root
+chown -R root:root /var/lib/oxidized/nginx
+chown root:nginx /var/lib/oxidized/nginx/.htpasswd
+
+# Remove SELinux MCS categories (see next section)
+chcon -R -l s0 /var/lib/oxidized/config
+chcon -R -l s0 /var/lib/oxidized/data
+# ... (all container dirs)
+```
+
+### Why Run After Container Start?
+
+The container may create files during first start (e.g., logs, Git repo initialization). Running `fix_ownership()` after start ensures these files have correct ownership.
+
+### Manual Invocation
+
+If you manually edit files and get permission errors:
+
+```bash
+# Re-run deploy to fix ownership
+./scripts/deploy.sh
+
+# Or manually fix specific directory
+sudo chown -R 30000:30000 /var/lib/oxidized/config
+sudo chcon -R -l s0 /var/lib/oxidized/config
+sudo systemctl restart oxidized.service
+```
+
+---
+
+## SELinux MCS Categories and Access Control
+
+### The MCS Problem
+
+SELinux's **Multi-Category Security (MCS)** assigns random security categories to files labeled with `:Z` (private volume mode):
+
+```bash
+# Example: Notice c129,c639 (MCS categories)
+ls -Z /var/lib/oxidized/config/
+drwxr-xr-x. 30000 30000 system_u:object_r:container_file_t:s0:c129,c639 config
+```
+
+**Problem**: The container is assigned **different** MCS categories at startup, so it cannot access files with existing categories, even with correct UID!
+
+### The Solution
+
+The `fix_ownership()` function removes MCS categories by setting the SELinux level to `s0`:
+
+```bash
+chcon -R -l s0 /var/lib/oxidized/config
+```
+
+This changes the label from `container_file_t:s0:c129,c639` to `container_file_t:s0`, which the container can access.
+
+### Why This Is Safe
+
+- SELinux type enforcement (`container_file_t`) is preserved
+- Container still cannot access files outside `/var/lib/oxidized`
+- No impact on system security
+- Standard practice for persistent container volumes
+
+### Verification
+
+```bash
+# Check SELinux labels (should show 's0' without MCS categories)
+ls -Z /var/lib/oxidized/config/
+
+# Should show: container_file_t:s0 (NO c###,c### categories)
+```
+
+### Alternative Approaches Rejected
+
+1. **`:z` (lowercase)** - Shared volume mode, but less secure
+2. **`--security-opt label=disable`** - Disables all SELinux protection
+3. **Custom SELinux policy** - Too complex, unnecessary
+
+The current approach (`:Z` + remove MCS) balances security and usability.
+
+---
+
 ## Deployment Statistics
 
 - **Deployment Time**: ~31 seconds (includes image pull)
@@ -166,8 +354,10 @@ curl -s http://localhost:8888/nodes.json | jq length  # Should show device count
 # 3. Config is correct
 grep "rest:" /var/lib/oxidized/config/config  # Should show: rest: 0.0.0.0:8888
 
-# 4. Permissions are correct
-ls -ld /var/lib/oxidized  # Should show: drwxr-x---. oxidized:oxidized
+# 4. Permissions are correct (container directories use UID 30000)
+ls -ld /var/lib/oxidized/config  # Should show: drwxr-xr-x. 30000:30000
+ls -ld /var/lib/oxidized/data    # Should show: drwxr-xr-x. 30000:30000
+ls -ld /var/lib/oxidized/repo    # Should show: drwxr-xr-x. 30000:30000
 
 # 5. SELinux labels are correct
 ls -dZ /var/lib/oxidized/config  # Should include: container_file_t

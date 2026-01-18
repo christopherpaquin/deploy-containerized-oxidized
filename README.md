@@ -222,8 +222,8 @@ sudo ./scripts/health-check.sh
 # Create device inventory
 sudo cp inventory/router.db.template /var/lib/oxidized/config/router.db
 sudo vim /var/lib/oxidized/config/router.db
-sudo chown 2000:2000 /var/lib/oxidized/config/router.db
-sudo chmod 600 /var/lib/oxidized/config/router.db
+sudo chown 30000:30000 /var/lib/oxidized/config/router.db
+sudo chmod 644 /var/lib/oxidized/config/router.db
 
 # Restart to load inventory
 sudo systemctl restart oxidized.service
@@ -231,6 +231,21 @@ sudo systemctl restart oxidized.service
 # Check status
 sudo systemctl status oxidized.service
 ```
+
+> **📝 IMPORTANT: Test Device Included**
+>
+> The `router.db.template` includes a **test device** entry:
+> ```
+> test-device:192.0.2.1:ios:testing::
+> ```
+>
+> **Purpose**: This dummy device (using non-routable TEST-NET IP) allows the Oxidized Web UI and API to start successfully for verification.
+>
+> **Action Required**:
+> 1. ✅ Leave it during initial deployment/testing
+> 2. ❌ **Remove or replace it** before production use with your real devices
+>
+> See [DEVICE-MANAGEMENT.md](/var/lib/oxidized/docs/DEVICE-MANAGEMENT.md) for adding real devices.
 
 **Access Web UI**: `http://<your-server-ip>:8888`
 
@@ -324,9 +339,9 @@ sudo cp inventory/router.db.template /var/lib/oxidized/config/router.db
 # Edit with your devices
 sudo vim /var/lib/oxidized/config/router.db
 
-# Set permissions (CRITICAL if using per-device credentials)
-sudo chown 2000:2000 /var/lib/oxidized/config/router.db
-sudo chmod 600 /var/lib/oxidized/config/router.db
+# Set permissions (CRITICAL - must be owned by container's UID)
+sudo chown 30000:30000 /var/lib/oxidized/config/router.db
+sudo chmod 644 /var/lib/oxidized/config/router.db
 
 # Restart service
 sudo systemctl restart oxidized.service
@@ -506,15 +521,21 @@ sudo ./scripts/health-check.sh
 # Remove service only (preserve data)
 sudo ./scripts/uninstall.sh
 
-# Remove everything including data
-sudo ./scripts/uninstall.sh --purge
+# Remove everything including data (prompts to backup router.db)
+sudo ./scripts/uninstall.sh --remove-data
+
+# Remove everything without prompts (NO BACKUP!)
+sudo ./scripts/uninstall.sh --remove-data --force
 ```
 
 **What it removes**:
 - Systemd service
 - Podman Quadlet file
 - Logrotate configuration
+- Helper scripts
 - System user (optional)
+
+**Safety Feature:** When using `--remove-data`, the script prompts to backup `router.db` to your home directory with a timestamp before deletion.
 - Data directories (only with `--purge`)
 
 **⚠️ WARNING**: `--purge` permanently deletes all backups and Git history!
@@ -562,8 +583,10 @@ This removes:
 ### Complete Removal (Delete Everything)
 
 ```bash
-sudo ./scripts/uninstall.sh --purge
+sudo ./scripts/uninstall.sh --remove-data
 ```
+
+**Safety:** You'll be prompted to backup `router.db` before deletion.
 
 **⚠️ WARNING**: This permanently deletes:
 - All device configurations
@@ -631,8 +654,8 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
 
 4. **Secure `router.db`** (if using per-device credentials):
    ```bash
-   sudo chmod 600 /var/lib/oxidized/config/router.db
-   sudo chown 2000:2000 /var/lib/oxidized/config/router.db
+   sudo chmod 644 /var/lib/oxidized/config/router.db
+   sudo chown 30000:30000 /var/lib/oxidized/config/router.db
    ```
 
 5. **Restrict network access**:
@@ -670,6 +693,8 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
 > **📖 Not sure which doc to read?** See **[DOCUMENTATION-GUIDE.md](DOCUMENTATION-GUIDE.md)** for a complete guide to our documentation structure.
 
 - **[QUICK-START.md](QUICK-START.md)** - ⚡ Quick reference guide for deployment and common tasks
+- **[DEVICE-MANAGEMENT.md](DEVICE-MANAGEMENT.md)** - 📱 Complete device management, groups, logging, and validation
+- **[DIRECTORY-STRUCTURE.md](DIRECTORY-STRUCTURE.md)** - 📁 Directory layout and file locations explained
 - **[CREDENTIALS-GUIDE.md](CREDENTIALS-GUIDE.md)** - 🔑 **IMPORTANT:** Understanding the TWO sets of credentials
 - **[DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md)** - ⭐ Deployment improvements, testing notes, and troubleshooting
 - **[AUTHENTICATION-SETUP.md](AUTHENTICATION-SETUP.md)** - 🔒 Web UI login configuration and management

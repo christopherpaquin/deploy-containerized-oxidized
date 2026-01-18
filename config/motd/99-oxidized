@@ -1,0 +1,80 @@
+#!/bin/bash
+# Oxidized MOTD - Helpful information for administrators
+# This file is installed to /etc/profile.d/99-oxidized.sh by deploy.sh
+
+# Colors
+readonly C_CYAN=$'\033[0;36m'
+readonly C_GREEN=$'\033[0;32m'
+readonly C_YELLOW=$'\033[1;33m'
+readonly C_BLUE=$'\033[0;34m'
+readonly C_RESET=$'\033[0m'
+readonly C_BOLD=$'\033[1m'
+
+# Only show if oxidized service exists (Quadlet-generated services appear in list-units)
+if ! systemctl list-units --all 2>/dev/null | grep -q "oxidized.service"; then
+    return 0
+fi
+
+cat << EOF
+
+${C_CYAN}╔══════════════════════════════════════════════════════════════════════════╗${C_RESET}
+${C_CYAN}║${C_RESET}           ${C_BOLD}🔧 Oxidized Network Device Backup Service${C_RESET}              ${C_CYAN}║${C_RESET}
+${C_CYAN}╚══════════════════════════════════════════════════════════════════════════╝${C_RESET}
+
+${C_BLUE}📦 Running in Podman Container${C_RESET} | ${C_GREEN}Web UI:${C_RESET} http://$(hostname -I | awk '{print $1}'):8888
+
+${C_YELLOW}Quick Commands:${C_RESET}
+  systemctl status oxidized          # Check service status
+  systemctl restart oxidized         # Restart service
+  systemctl stop oxidized            # Stop service
+  systemctl start oxidized           # Start service
+  podman logs -f oxidized            # View live logs
+  journalctl -u oxidized -f          # View systemd journal
+
+${C_YELLOW}Health & Management:${C_RESET}
+  /var/lib/oxidized/scripts/health-check.sh       # System health check
+  /var/lib/oxidized/scripts/validate-router-db.sh # Validate device inventory
+  /var/lib/oxidized/scripts/test-device.sh <name> # Test device connectivity
+
+${C_YELLOW}File Structure:${C_RESET} /var/lib/oxidized/
+  ├── ${C_GREEN}config/${C_RESET}
+  │   ├── config              # Main configuration
+  │   └── router.db           # Device inventory (edit this!)
+  ├── ${C_GREEN}data/${C_RESET}
+  │   └── oxidized.log        # Active log file
+  ├── ${C_GREEN}repo/${C_RESET}                 # Git repository (device configs)
+  ├── ${C_GREEN}nginx/${C_RESET}                # Web UI authentication
+  └── ${C_GREEN}scripts/${C_RESET}              # Helper scripts
+
+${C_YELLOW}Configuration Files:${C_RESET}
+  ${C_GREEN}Device Inventory:${C_RESET}  /var/lib/oxidized/config/router.db
+  ${C_GREEN}Main Config:${C_RESET}       /var/lib/oxidized/config/config
+  ${C_GREEN}Web UI Login:${C_RESET}      Managed in deployment .env file
+  ${C_GREEN}Logs:${C_RESET}              /var/lib/oxidized/data/oxidized.log
+  ${C_GREEN}Backups:${C_RESET}           /var/lib/oxidized/repo/
+
+${C_YELLOW}Add/Edit Devices:${C_RESET}
+  1. Edit: ${C_GREEN}sudo vi /var/lib/oxidized/config/router.db${C_RESET}
+  2. Validate: ${C_GREEN}/var/lib/oxidized/scripts/validate-router-db.sh${C_RESET}
+  3. Restart: ${C_GREEN}sudo systemctl restart oxidized${C_RESET}
+
+${C_YELLOW}View Device Backups:${C_RESET}
+  cd /var/lib/oxidized/repo
+  sudo -u oxidized git log --all --oneline    # View all commits
+  ls -la                                      # View backed up devices
+
+${C_YELLOW}Backup Schedule:${C_RESET}
+  Check Interval: Every $(grep "^interval:" /var/lib/oxidized/config/config 2>/dev/null | awk '{print $2}' | xargs -I {} bash -c 'if [ {} -ge 3600 ]; then echo "$(({}/ 3600)) hour(s)"; elif [ {} -ge 60 ]; then echo "$(({}/ 60)) minute(s)"; else echo "{} second(s)"; fi')
+  Backup Trigger: ${C_GREEN}Only when device config changes${C_RESET}
+
+  ${C_BLUE}ℹ${C_RESET}  Oxidized polls devices on schedule but only creates a backup
+     (Git commit) when it detects a configuration difference.
+
+${C_YELLOW}Log Rotation:${C_RESET} ${C_GREEN}✅ Configured${C_RESET} (daily, 14 days retention)
+  Config: /etc/logrotate.d/oxidized
+
+${C_CYAN}────────────────────────────────────────────────────────────────────────────${C_RESET}
+${C_BLUE}ℹ${C_RESET}  Documentation: ${C_GREEN}/var/lib/oxidized/docs/${C_RESET} (user guides and references)
+${C_CYAN}────────────────────────────────────────────────────────────────────────────${C_RESET}
+
+EOF

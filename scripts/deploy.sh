@@ -319,17 +319,18 @@ create_directories() {
   done
 
   if [[ "${DRY_RUN}" == "false" ]]; then
-    # Set ownership to oxidized user
+    # Set initial ownership to oxidized:oxidized for deployment scripts
+    # NOTE: This will be changed to 30000:30000 by fix_ownership() after container starts
     chown -R "${OXIDIZED_UID}:${OXIDIZED_GID}" "${OXIDIZED_ROOT}"
-    log_success "Set ownership: ${OXIDIZED_UID}:${OXIDIZED_GID} on ${OXIDIZED_ROOT}"
+    log_success "Set ownership: ${OXIDIZED_USER}:${OXIDIZED_GROUP} on ${OXIDIZED_ROOT}"
 
-    # Set directory permissions (750 = rwxr-x---)
-    find "${OXIDIZED_ROOT}" -type d -exec chmod 750 {} \;
-    log_success "Set directory permissions: 750"
+    # Set directory permissions (755 = rwxr-xr-x)
+    find "${OXIDIZED_ROOT}" -type d -exec chmod 755 {} \;
+    log_success "Set directory permissions: 755"
 
-    # Set file permissions (640 = rw-r-----)
-    find "${OXIDIZED_ROOT}" -type f -exec chmod 640 {} \;
-    log_success "Set file permissions: 640"
+    # Set file permissions (644 = rw-r--r--)
+    find "${OXIDIZED_ROOT}" -type f -exec chmod 644 {} \;
+    log_success "Set file permissions: 644"
 
     # SSH directory needs stricter permissions
     if [[ -d "${OXIDIZED_ROOT}/ssh" ]]; then
@@ -374,7 +375,10 @@ deploy_config() {
     log_warn "Config already exists: ${dst_config}"
     log_warn "Backing up to ${dst_config}.backup"
     if [[ "${DRY_RUN}" == "false" ]]; then
-      cp "${dst_config}" "${dst_config}.backup.$(date +%Y%m%d_%H%M%S)"
+      local backup_file
+      backup_file="${dst_config}.backup.$(date +%Y%m%d_%H%M%S)"
+      cp "${dst_config}" "${backup_file}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${backup_file}"
     fi
   fi
 
@@ -392,6 +396,8 @@ deploy_config() {
       -e "s|{{THREADS}}|${THREADS:-30}|g" \
       -e "s|{{TIMEOUT}}|${TIMEOUT:-20}|g" \
       -e "s|{{RETRIES}}|${RETRIES:-3}|g" \
+      -e "s|{{INPUT_METHODS}}|${INPUT_METHODS:-ssh, telnet}|g" \
+      -e "s|{{DEBUG}}|${DEBUG:-false}|g" \
       -e "s|{{OXIDIZED_API_HOST}}|${OXIDIZED_API_HOST:-0.0.0.0}|g" \
       -e "s|{{OXIDIZED_WEB_UI}}|${OXIDIZED_WEB_UI:-false}|g" \
       -e "s|{{GIT_USER_NAME}}|${GIT_USER_NAME:-Oxidized}|g" \
@@ -408,7 +414,17 @@ deploy_config() {
   local dst_inventory="${OXIDIZED_ROOT}/config/router.db"
 
   if [[ -f "${dst_inventory}" ]]; then
-    log_info "Router database already exists: ${dst_inventory} (keeping existing)"
+    # Backup existing router.db before any changes
+    local backup_file
+    backup_file="${dst_inventory}.backup.$(date +%Y%m%d_%H%M%S)"
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would backup: ${dst_inventory} -> ${backup_file}"
+    else
+      cp "${dst_inventory}" "${backup_file}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${backup_file}"
+      log_success "Backed up router.db: ${backup_file}"
+    fi
+    log_info "Router database exists: ${dst_inventory} (keeping existing)"
   else
     if [[ "${DRY_RUN}" == "true" ]]; then
       log_info "[DRY-RUN] Would copy: ${src_inventory} -> ${dst_inventory}"
@@ -439,6 +455,21 @@ deploy_config() {
       chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${known_hosts}"
       chmod 644 "${known_hosts}"
       log_success "Created: ${known_hosts}"
+    fi
+
+    # Create .gitconfig for proper Git commits in container
+    local gitconfig="${OXIDIZED_ROOT}/ssh/.gitconfig"
+    if [[ ! -f "${gitconfig}" ]]; then
+      cat > "${gitconfig}" << 'GITCONFIG'
+[user]
+	name = Oxidized
+	email = oxidized@example.com
+[safe]
+	directory = /home/oxidized/.config/oxidized/repo
+GITCONFIG
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${gitconfig}"
+      chmod 644 "${gitconfig}"
+      log_success "Created: ${gitconfig}"
     fi
   fi
 }
@@ -557,7 +588,10 @@ install_quadlet() {
     log_warn "Quadlet already exists: ${dst_quadlet}"
     log_warn "Backing up to ${dst_quadlet}.backup"
     if [[ "${DRY_RUN}" == "false" ]]; then
-      cp "${dst_quadlet}" "${dst_quadlet}.backup.$(date +%Y%m%d_%H%M%S)"
+      local backup_file
+      backup_file="${dst_quadlet}.backup.$(date +%Y%m%d_%H%M%S)"
+      cp "${dst_quadlet}" "${backup_file}"
+      # Quadlet is in /etc, keep as root:root
     fi
   fi
 
@@ -639,6 +673,129 @@ install_logrotate() {
       log_warn "Logrotate configuration validation failed (non-fatal)"
     fi
   fi
+}
+
+# Install MOTD (Message of the Day)
+install_motd() {
+  log_step "Installing MOTD"
+
+  local src_motd="${REPO_ROOT}/config/motd/99-oxidized"
+  local dst_motd="/etc/profile.d/99-oxidized.sh"
+
+  if [[ ! -f "${src_motd}" ]]; then
+    log_warn "Source MOTD not found: ${src_motd}"
+    return 0
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would copy: ${src_motd} -> ${dst_motd}"
+  else
+    cp "${src_motd}" "${dst_motd}"
+    chmod 755 "${dst_motd}"
+    log_success "Installed: ${dst_motd}"
+    log_info "MOTD will display on next login"
+  fi
+}
+
+# Install documentation to Oxidized root
+install_documentation() {
+  log_step "Installing documentation"
+
+  local docs_dir="${OXIDIZED_ROOT}/docs"
+
+  # Create docs directory if it doesn't exist
+  if [[ ! -d "${docs_dir}" ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would create: ${docs_dir}"
+    else
+      mkdir -p "${docs_dir}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${docs_dir}"
+      chmod 755 "${docs_dir}"
+      log_success "Created: ${docs_dir}"
+    fi
+  fi
+
+  # List of documentation files to copy (user guides and references)
+  local doc_files=(
+    "QUICK-START.md"
+    "DEVICE-MANAGEMENT.md"
+    "CREDENTIALS-GUIDE.md"
+    "DIRECTORY-STRUCTURE.md"
+    "docs/GIT-REPOSITORY-STRUCTURE.md"
+    "docs/TELNET-CONFIGURATION.md"
+  )
+
+  for doc in "${doc_files[@]}"; do
+    local src_doc="${REPO_ROOT}/${doc}"
+    local filename
+    filename=$(basename "${doc}")
+    local dst_doc="${docs_dir}/${filename}"
+
+    if [[ ! -f "${src_doc}" ]]; then
+      log_warn "Source documentation not found: ${src_doc}"
+      continue
+    fi
+
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would copy: ${src_doc} -> ${dst_doc}"
+    else
+      cp "${src_doc}" "${dst_doc}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_doc}"
+      chmod 644 "${dst_doc}"
+      log_success "Installed: ${dst_doc}"
+    fi
+  done
+
+  if [[ "${DRY_RUN}" == "false" ]]; then
+    log_info "Documentation available at: ${docs_dir}"
+  fi
+}
+
+# Install helper scripts to Oxidized root
+install_helper_scripts() {
+  log_step "Installing helper scripts"
+
+  local scripts_dir="${OXIDIZED_ROOT}/scripts"
+
+  # Create scripts directory if it doesn't exist
+  if [[ ! -d "${scripts_dir}" ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would create: ${scripts_dir}"
+    else
+      mkdir -p "${scripts_dir}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${scripts_dir}"
+      chmod 755 "${scripts_dir}"
+      log_success "Created: ${scripts_dir}"
+    fi
+  fi
+
+  # Copy helper scripts
+  local helper_scripts=(
+    "health-check.sh"
+    "validate-router-db.sh"
+    "test-device.sh"
+  )
+
+  for script in "${helper_scripts[@]}"; do
+    local src_script="${SCRIPT_DIR}/${script}"
+    local dst_script="${scripts_dir}/${script}"
+
+    if [[ ! -f "${src_script}" ]]; then
+      log_warn "Source script not found: ${src_script}"
+      continue
+    fi
+
+    if [[ "${DRY_RUN}" == "true" ]]; then
+      log_info "[DRY-RUN] Would copy: ${src_script} -> ${dst_script}"
+    else
+      cp "${src_script}" "${dst_script}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_script}"
+      chmod 755 "${dst_script}"
+      log_success "Installed: ${dst_script}"
+    fi
+  done
+
+  log_info "Helper scripts available at: ${scripts_dir}/"
 }
 
 # Pull container image
@@ -728,7 +885,7 @@ install_nginx() {
 configure_nginx_auth() {
   log_step "Configuring nginx authentication"
 
-  local nginx_dir="${OXIDIZED_ROOT}/nginx"
+  local nginx_dir="${NGINX_DATA_DIR:-${OXIDIZED_ROOT}/nginx}"
   local htpasswd_file="${nginx_dir}/.htpasswd"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
@@ -755,30 +912,29 @@ configure_nginx_auth() {
 
   # Set SELinux context for nginx to read files in this directory
   if command -v semanage &> /dev/null; then
-    if ! semanage fcontext -l | grep -q "${nginx_dir}"; then
-      semanage fcontext -a -t httpd_sys_content_t "${nginx_dir}(/.*)?" &> /dev/null || true
+    # Check if context already configured (suppress broken pipe errors)
+    if ! semanage fcontext -l 2> /dev/null | grep -q "${nginx_dir}" 2> /dev/null; then
+      semanage fcontext -a -t httpd_sys_content_t "${nginx_dir}(/.*)?" 2> /dev/null || true
     fi
-    restorecon -R "${nginx_dir}" &> /dev/null || true
+    restorecon -R "${nginx_dir}" 2> /dev/null || true
     log_info "Set SELinux context for nginx access"
   fi
 
-  # Check if htpasswd file exists
+  # Create/update htpasswd file from .env credentials
+  # Always regenerate to ensure .env is the source of truth
   if [[ -f "${htpasswd_file}" ]]; then
-    log_warn "htpasswd file already exists: ${htpasswd_file}"
-    log_info "Keeping existing file (won't overwrite)"
-    # Ensure permissions are correct even if file exists
-    chmod 644 "${htpasswd_file}"
-    chcon -t httpd_sys_content_t "${htpasswd_file}" 2> /dev/null || true
-    return
+    log_info "Updating htpasswd file with credentials from .env"
+  else
+    log_info "Creating htpasswd file for user: ${NGINX_USERNAME}"
   fi
 
-  # Create htpasswd file from .env credentials
-  log_info "Creating htpasswd file for user: ${NGINX_USERNAME}"
-  if echo "${NGINX_PASSWORD}" | htpasswd -i -c "${htpasswd_file}" "${NGINX_USERNAME}" &> /dev/null; then
-    chmod 644 "${htpasswd_file}"
+  # Generate htpasswd file (overwrite if exists)
+  if echo "${NGINX_PASSWORD}" | htpasswd -i -c "${htpasswd_file}" "${NGINX_USERNAME}" 2> /dev/null; then
+    chmod 640 "${htpasswd_file}"
+    chown root:nginx "${htpasswd_file}"
     chcon -t httpd_sys_content_t "${htpasswd_file}" 2> /dev/null || true
-    log_success "Created htpasswd file: ${htpasswd_file}"
-    log_info "Web UI login: ${NGINX_USERNAME} / ${NGINX_PASSWORD}"
+    log_success "Configured htpasswd file: ${htpasswd_file}"
+    log_info "Web UI login: ${NGINX_USERNAME} / ********"
   else
     log_error "Failed to create htpasswd file"
     exit ${EXIT_GENERAL_FAILURE}
@@ -807,12 +963,14 @@ deploy_nginx_config() {
     log_warn "nginx config already exists: ${dst_config}"
     log_warn "Backing up to ${dst_config}.backup"
     cp "${dst_config}" "${dst_config}.backup"
+    # nginx config is in /etc, keep as root:root
   fi
 
   # Generate config from template
   log_info "Generating nginx config from template..."
   sed -e "s|{{OXIDIZED_API_PORT}}|${OXIDIZED_API_PORT}|g" \
     -e "s|{{OXIDIZED_API_HOST}}|${OXIDIZED_API_HOST}|g" \
+    -e "s|{{NGINX_DATA_DIR}}|${NGINX_DATA_DIR:-${OXIDIZED_ROOT}/nginx}|g" \
     "${config_template}" > "${dst_config}"
 
   # Fix nginx main config to avoid port 80 conflict
@@ -877,8 +1035,8 @@ configure_nginx_selinux() {
   # Allow nginx to bind to port 8888
   log_info "Allowing nginx to bind to port ${OXIDIZED_API_PORT}..."
 
-  # Check if port is already defined
-  if semanage port -l | grep -qE "^http_port_t.*\b${OXIDIZED_API_PORT}\b"; then
+  # Check if port is already defined (suppress broken pipe errors)
+  if semanage port -l 2> /dev/null | grep -qE "^http_port_t.*\b${OXIDIZED_API_PORT}\b" 2> /dev/null; then
     log_info "Port ${OXIDIZED_API_PORT} already configured as http_port_t"
   else
     # Try to add the port
@@ -1011,6 +1169,109 @@ start_service() {
   sleep 3
 }
 
+# Fix ownership and SELinux labels after container creates files
+fix_ownership() {
+  log_step "Fixing file ownership and SELinux labels"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would fix ownership and SELinux labels on ${OXIDIZED_ROOT}"
+    return
+  fi
+
+  # The container uses internal UID 30000 for the oxidized user
+  # Files need to be owned by UID 30000 on the host for container access
+  # NOTE: This is a known behavior with baseimage-docker containers
+  log_info "Setting ownership to UID 30000 for container access..."
+
+  # Container-accessed directories must be owned by UID 30000
+  chown -R 30000:30000 "${OXIDIZED_ROOT}/config"
+  chown -R 30000:30000 "${OXIDIZED_ROOT}/data"
+  chown -R 30000:30000 "${OXIDIZED_ROOT}/output"
+  chown -R 30000:30000 "${OXIDIZED_ROOT}/repo"
+  chown -R 30000:30000 "${OXIDIZED_ROOT}/ssh"
+
+  # Host-accessed directories can use the host's oxidized user
+  chown -R "${OXIDIZED_UID}:${OXIDIZED_GID}" "${OXIDIZED_ROOT}/docs" 2> /dev/null || true
+  chown -R "${OXIDIZED_UID}:${OXIDIZED_GID}" "${OXIDIZED_ROOT}/scripts" 2> /dev/null || true
+
+  # Fix nginx directory (should be root:root)
+  if [[ -d "${OXIDIZED_ROOT}/nginx" ]]; then
+    chown -R root:root "${OXIDIZED_ROOT}/nginx"
+    # But .htpasswd needs special ownership for nginx to read
+    if [[ -f "${OXIDIZED_ROOT}/nginx/.htpasswd" ]]; then
+      chown root:nginx "${OXIDIZED_ROOT}/nginx/.htpasswd"
+      chmod 640 "${OXIDIZED_ROOT}/nginx/.htpasswd"
+    fi
+  fi
+
+  # Remove SELinux MCS categories that prevent container access
+  # MCS categories like c129,c639 isolate files and block the container
+  log_info "Removing SELinux MCS categories..."
+  if command -v chcon &> /dev/null && [[ "$(getenforce 2> /dev/null)" == "Enforcing" ]]; then
+    chcon -R -l s0 "${OXIDIZED_ROOT}/config" 2> /dev/null || true
+    chcon -R -l s0 "${OXIDIZED_ROOT}/data" 2> /dev/null || true
+    chcon -R -l s0 "${OXIDIZED_ROOT}/output" 2> /dev/null || true
+    chcon -R -l s0 "${OXIDIZED_ROOT}/repo" 2> /dev/null || true
+    chcon -R -l s0 "${OXIDIZED_ROOT}/ssh" 2> /dev/null || true
+    log_success "SELinux labels reset to s0 (no MCS categories)"
+  fi
+
+  log_success "File ownership and SELinux labels corrected"
+}
+
+# Validate source file (router.db)
+validate_source_file() {
+  log_step "Validating device inventory (router.db)"
+
+  local router_db="${OXIDIZED_ROOT}/config/router.db"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would validate: ${router_db}"
+    return
+  fi
+
+  # Check if router.db exists
+  if [[ ! -f "${router_db}" ]]; then
+    log_error "Device inventory file not found: ${router_db}"
+    log_error "This file is required for Oxidized to know which devices to backup"
+    log_info "Create it with format: name:ip:model:group:username:password"
+    log_info "Example: switch01:10.1.1.1:ios:datacenter:admin:password"
+    log_info "Leave username:password blank to use global credentials from .env"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Check if file is readable
+  if [[ ! -r "${router_db}" ]]; then
+    log_error "Cannot read ${router_db} - check permissions"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  # Count non-comment, non-empty lines
+  local device_count
+  device_count=$(grep -cv -e '^#' -e '^[[:space:]]*$' "${router_db}")
+
+  if [[ ${device_count} -eq 0 ]]; then
+    log_warn "No devices configured in ${router_db}"
+    log_warn "Oxidized will start but won't back up any devices"
+    log_info "Add devices with format: name:ip:model:group:username:password"
+  else
+    log_success "Found ${device_count} device(s) in inventory"
+  fi
+
+  # Run validation script if available
+  local validate_script="${OXIDIZED_ROOT}/scripts/validate-router-db.sh"
+  if [[ -f "${validate_script}" && -x "${validate_script}" ]]; then
+    log_info "Running inventory validation..."
+    if "${validate_script}"; then
+      log_success "Inventory validation passed"
+    else
+      log_error "Inventory validation failed"
+      log_error "Fix errors in ${router_db} and re-run deployment"
+      exit ${EXIT_GENERAL_FAILURE}
+    fi
+  fi
+}
+
 # Verify deployment
 verify_deployment() {
   log_step "Verifying deployment"
@@ -1122,14 +1383,20 @@ ${COLOR_BLUE}Next Steps:${COLOR_RESET}
    podman logs -f oxidized
 
 6. ${COLOR_YELLOW}Run health check:${COLOR_RESET}
-   sudo ${SCRIPT_DIR}/health-check.sh
+   ${OXIDIZED_ROOT}/scripts/health-check.sh
+
+7. ${COLOR_YELLOW}Validate and test devices:${COLOR_RESET}
+   ${OXIDIZED_ROOT}/scripts/validate-router-db.sh
+   ${OXIDIZED_ROOT}/scripts/test-device.sh <device-name>
 
 ${COLOR_BLUE}Data Locations:${COLOR_RESET}
   Configuration: ${OXIDIZED_ROOT}/config/
   Device List:   ${OXIDIZED_ROOT}/config/router.db (colon-delimited CSV)
+  Logs:          ${OXIDIZED_ROOT}/data/oxidized.log
   SSH Keys:      ${OXIDIZED_ROOT}/ssh/
   Git Backups:   ${OXIDIZED_ROOT}/repo/
   Output:        ${OXIDIZED_ROOT}/output/
+  Helper Scripts: ${OXIDIZED_ROOT}/scripts/
 
 ${COLOR_BLUE}Useful Commands:${COLOR_RESET}
   systemctl status oxidized.service    # Check service status
@@ -1208,6 +1475,9 @@ main() {
   create_network
   install_quadlet
   install_logrotate
+  install_motd
+  install_documentation
+  install_helper_scripts
   pull_image
   configure_firewall
   install_nginx
@@ -1216,6 +1486,8 @@ main() {
   configure_nginx_selinux
   start_nginx
   start_service
+  fix_ownership
+  validate_source_file
   verify_deployment
   show_next_steps
 
