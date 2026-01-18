@@ -11,6 +11,31 @@
     },
     "MD040": {
       "enabled": false
+    },
+    "MD022": {
+      "enabled": false
+    },
+    "MD024": {
+      "enabled": true,
+      "siblings_only": true
+    },
+    "MD026": {
+      "enabled": false
+    },
+    "MD029": {
+      "enabled": false
+    },
+    "MD032": {
+      "enabled": false
+    },
+    "MD036": {
+      "enabled": false
+    },
+    "MD005": {
+      "enabled": false
+    },
+    "MD007": {
+      "enabled": false
     }
   }
 }
