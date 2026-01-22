@@ -136,9 +136,13 @@ ss -tlnp | grep 8888
 
 # Check config
 
-grep "rest:" /var/lib/oxidized/config/config
+grep -A 2 "oxidized-web:" /var/lib/oxidized/config/config
 
-# Should show: rest: 0.0.0.0:8888
+# Should show:
+# extensions:
+#   oxidized-web:
+#     host: 0.0.0.0
+#     port: 8888
 
 ```
 

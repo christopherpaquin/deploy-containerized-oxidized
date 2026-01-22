@@ -120,9 +120,11 @@ password: your_secure_password
 # Polling interval (seconds)
 interval: 3600  # 1 hour
 
-# REST API and Web UI
-rest: 0.0.0.0:8888
-web: true
+# REST API and Web UI (oxidized-web extension)
+extensions:
+  oxidized-web:
+    host: 0.0.0.0
+    port: 8888
 
 # CSV inventory source (router.db)
 source:

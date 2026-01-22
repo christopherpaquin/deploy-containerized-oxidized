@@ -21,13 +21,14 @@ retries: {{RETRIES}}
 prompt: !ruby/regexp /^([\w.@-]+[#>]\s?)$/
 next_adds_job: false
 
-# REST API configuration
+# REST API and Web UI configuration (oxidized-web extension)
 # Note: Inside container, always bind to 0.0.0.0
 # Port publishing in Quadlet exposes this to OXIDIZED_API_HOST externally
-rest: 0.0.0.0:8888
-
-# Web UI configuration
-web: {{OXIDIZED_WEB_UI}}
+# DEPRECATED: "rest" and "web" are deprecated, use "extensions.oxidized-web" instead
+extensions:
+  oxidized-web:
+    host: 0.0.0.0
+    port: 8888
 
 # Input configuration
 input:

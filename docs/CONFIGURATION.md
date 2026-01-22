@@ -294,13 +294,14 @@ interval: 3600  # 1 hour
 log: /home/oxidized/.config/oxidized/data/oxidized.log
 debug: false
 
-# REST API (backend, exposed via Nginx)
+# REST API and Web UI (oxidized-web extension)
+# DEPRECATED: "rest" and "web" are deprecated in newer versions
+# Use "extensions.oxidized-web" instead
 
-rest: 0.0.0.0:8888
-
-# Web UI (disabled, use REST API + custom frontend instead)
-
-web: false
+extensions:
+  oxidized-web:
+    host: 0.0.0.0
+    port: 8888
 
 # Input methods (how to connect to devices)
 

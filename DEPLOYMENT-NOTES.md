@@ -39,16 +39,18 @@ Successfully completed 4 full deploy/uninstall/redeploy cycles to ensure:
 **Change Made** (`config/oxidized/config.template`):
 ```yaml
 
-# Before:
+# DEPRECATED (old format):
+# rest: {{OXIDIZED_API_HOST}}:8888
+# rest: 0.0.0.0:8888
 
-rest: {{OXIDIZED_API_HOST}}:8888
-
-# After:
-
-rest: 0.0.0.0:8888
+# NEW (oxidized-web extension):
+extensions:
+  oxidized-web:
+    host: 0.0.0.0
+    port: 8888
 ```
 
-**Reason**: Inside the container, bind to all interfaces (0.0.0.0). The Quadlet `PublishPort` directive exposes this to the host's IP.
+**Reason**: Inside the container, bind to all interfaces (0.0.0.0). The Quadlet `PublishPort` directive exposes this to the host's IP. The old "rest" configuration is deprecated in newer versions of Oxidized.
 
 ### 3. Firewall Configuration
 
@@ -405,7 +407,7 @@ curl -s http://localhost:8888/nodes.json | jq length  # Should show device count
 
 # 3. Config is correct
 
-grep "rest:" /var/lib/oxidized/config/config  # Should show: rest: 0.0.0.0:8888
+grep -A 2 "oxidized-web:" /var/lib/oxidized/config/config  # Should show extensions.oxidized-web configuration
 
 # 4. Permissions are correct (container directories use UID 30000)
 
