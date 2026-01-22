@@ -226,7 +226,7 @@ OXIDIZED_ROOT="/var/lib/oxidized"
 ### Container (Required)
 
 ```bash
-OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.30.1"
+OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.35.0"
 CONTAINER_NAME="oxidized"
 PODMAN_NETWORK="oxidized-net"
 ```
@@ -449,7 +449,7 @@ cp config/oxidized/config /var/lib/oxidized/config/config
 # In .env - GOOD!
 OXIDIZED_ROOT="/var/lib/oxidized"
 OXIDIZED_PASSWORD="secure-password-here"
-OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.30.1"
+OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.35.0"
 
 # In deploy.sh
 source .env

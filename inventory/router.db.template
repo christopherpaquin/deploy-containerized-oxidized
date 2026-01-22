@@ -41,7 +41,11 @@
 # - asa       : Cisco ASA
 # - panos     : Palo Alto PAN-OS
 # - aoscx     : Aruba AOS-CX
+# - tplink    : TP-Link switches (NOTE: use "tplink" NOT "tp-link")
 # - See: https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model
+#
+# IMPORTANT: Model names are case-sensitive and must match exactly.
+# Common mistakes: "tp-link" (wrong) vs "tplink" (correct)
 #
 # EXAMPLE ENTRIES (COMMENTED OUT - UNCOMMENT AND MODIFY TO USE):
 # ================================================================
@@ -74,7 +78,10 @@
 # Example 9: Cisco Nexus
 # datacenter-spine01:10.1.4.20:nxos:dc-switches:dcadmin:CHANGEME
 
-# Example 10: Global credentials mode (leave username/password blank)
+# Example 10: TP-Link switch (NOTE: model is "tplink" not "tp-link")
+# tplink-switch01:192.168.1.1:tplink:lab-switches:admin:CHANGEME
+
+# Example 11: Global credentials mode (leave username/password blank)
 # branch-sw02:10.2.2.2:ios:branch::
 # branch-sw03:10.2.2.3:ios:branch::
 # branch-sw04:10.2.2.4:ios:branch::

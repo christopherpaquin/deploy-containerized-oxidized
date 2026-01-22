@@ -1071,7 +1071,7 @@ If an upgrade causes issues:
 
 2. **Update `.env` to previous version**:
    ```bash
-   OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.30.1"  # Previous version
+   OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.35.0"  # Previous version
    ```
 
 3. **Re-deploy**:
@@ -1133,7 +1133,7 @@ sudo cat /var/lib/oxidized/config/config
 ls -la /var/lib/oxidized/
 
 # Pull image manually
-sudo podman pull docker.io/oxidized/oxidized:0.30.1
+sudo podman pull docker.io/oxidized/oxidized:0.35.0
 ```
 
 #### Devices Not Backing Up

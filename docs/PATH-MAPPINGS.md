@@ -38,7 +38,7 @@ Quick reference for understanding how files are mapped between the host system a
 ┌─────────────────────────────────┼───────────────────────────────────────┐
 │                                  │                                       │
 │                          CONTAINER                                       │
-│                    (oxidized/oxidized:0.30.1)                           │
+│                    (oxidized/oxidized:0.35.0)                           │
 │                                  │                                       │
 │  /home/oxidized/                 │                                       │
 │  └── .config/oxidized/           │                                       │

@@ -220,11 +220,11 @@ The host-side logrotate uses `copytruncate` to handle the open file.
 
 ---
 
-### Decision 6: Image Version Pinning - `0.30.1`
+### Decision 6: Image Version Pinning - `0.35.0`
 
-**Date**: 2026-01-17
+**Date**: 2026-01-22
 
-**Decision**: Pin to `oxidized/oxidized:0.30.1` (stable release)
+**Decision**: Pin to `oxidized/oxidized:0.35.0` (stable release)
 
 **Context**:
 - Production deployment
@@ -243,7 +243,7 @@ The host-side logrotate uses `copytruncate` to handle the open file.
    - ❌ Development/unstable
    - ❌ Not for production
 
-3. **Specific version tag `0.30.1`** (CHOSEN)
+3. **Specific version tag `0.35.0`** (CHOSEN)
    - ✅ Stable, tested release
    - ✅ Predictable behavior
    - ✅ Controlled upgrades
@@ -251,7 +251,7 @@ The host-side logrotate uses `copytruncate` to handle the open file.
    - ✅ Documented upgrade path
 
 Rationale:
-Version pinning is essential for production stability. `0.30.1` is a recent stable release.
+Version pinning is essential for production stability. `0.35.0` is the latest stable release (updated 2025-12-04).
 Upgrades are manual and deliberate, following the process in `UPGRADE.md`.
 
 **Note**: When implementing this, verify the latest stable version on Docker Hub and update accordingly.

@@ -180,15 +180,15 @@ sudo firewall-cmd --zone=internal --list-ports
 
 - **Registry**: docker.io
 - **Repository**: oxidized/oxidized
-- **Version**: Pinned to stable release (e.g., `0.30.1`)
-- **Tag Format**: `docker.io/oxidized/oxidized:0.30.1`
+- **Version**: Pinned to stable release (e.g., `0.35.0`)
+- **Tag Format**: `docker.io/oxidized/oxidized:0.35.0`
 
 ### Image Pull
 
 The container image will be automatically pulled by Podman when the service starts. To pre-pull the image:
 
 ```bash
-podman pull docker.io/oxidized/oxidized:0.30.1
+podman pull docker.io/oxidized/oxidized:0.35.0
 ```
 
 ---

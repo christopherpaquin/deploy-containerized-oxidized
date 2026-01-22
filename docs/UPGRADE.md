@@ -31,7 +31,7 @@ This deployment uses **pinned container image versions** to ensure:
 The Quadlet file pins the Oxidized version:
 
 ```ini
-Image=docker.io/oxidized/oxidized:0.30.1
+Image=docker.io/oxidized/oxidized:0.35.0
 ```
 
 ### Upgrade Frequency
@@ -119,8 +119,8 @@ curl -s http://localhost:8888/nodes.json | jq '.' > /tmp/oxidized-nodes-before.j
 ### Step 1: Pull New Image
 
 ```bash
-# Determine target version (example: 0.31.0)
-NEW_VERSION="0.31.0"
+# Determine target version (example: 0.36.0)
+NEW_VERSION="0.36.0"
 
 # Pull new image
 sudo podman pull docker.io/oxidized/oxidized:${NEW_VERSION}
@@ -136,15 +136,15 @@ podman images | grep oxidized
 sudo vim /etc/containers/systemd/oxidized.container
 
 # Update the Image line:
-# FROM: Image=docker.io/oxidized/oxidized:0.30.1
-# TO:   Image=docker.io/oxidized/oxidized:0.31.0
+# FROM: Image=docker.io/oxidized/oxidized:0.35.0
+# TO:   Image=docker.io/oxidized/oxidized:0.36.0
 ```
 
 Or use `sed` for automation:
 
 ```bash
-OLD_VERSION="0.30.1"
-NEW_VERSION="0.31.0"
+OLD_VERSION="0.35.0"
+NEW_VERSION="0.36.0"
 
 sudo sed -i "s|oxidized:${OLD_VERSION}|oxidized:${NEW_VERSION}|g" \
     /etc/containers/systemd/oxidized.container
@@ -239,7 +239,7 @@ If the upgrade fails or causes issues, rollback to the previous version:
 
 ```bash
 # Set previous version
-OLD_VERSION="0.30.1"
+OLD_VERSION="0.35.0"
 
 # Update Quadlet back to old version
 sudo sed -i "s|oxidized:.*|oxidized:${OLD_VERSION}|g" \
@@ -349,14 +349,20 @@ sudo rm /etc/containers/systemd/oxidized-test.container
 
 ## 📚 Version History
 
-### Version 0.30.1 (Current)
+### Version 0.35.0 (Current)
 
-- **Release Date**: 2024-xx-xx
+- **Release Date**: 2025-12-04
 - **Status**: Stable
 - **Known Issues**: None
-- **Deployed**: 2026-01-17
+- **Deployed**: 2026-01-22
 
-### Version 0.31.0 (Example Future Version)
+### Version 0.30.1 (Previous)
+
+- **Release Date**: 2024-xx-xx
+- **Status**: Superseded
+- **Replaced by**: 0.35.0
+
+### Version 0.36.0 (Example Future Version)
 
 - **Release Date**: TBD
 - **Status**: Not deployed
@@ -370,7 +376,7 @@ Keep a log of upgrades (adjust path if you customized OXIDIZED_ROOT in `.env`):
 ```bash
 # Create upgrade log
 sudo tee -a /var/lib/oxidized/UPGRADE_HISTORY.log <<EOF
-$(date): Initial deployment - version 0.30.1
+$(date): Initial deployment - version 0.35.0
 EOF
 
 # After each upgrade, append:
@@ -395,13 +401,13 @@ podman images --digests | grep oxidized
 
 ```bash
 # View image metadata
-podman inspect docker.io/oxidized/oxidized:0.30.1 | jq '.[0]'
+podman inspect docker.io/oxidized/oxidized:0.35.0 | jq '.[0]'
 
 # Check image layers
-podman history docker.io/oxidized/oxidized:0.30.1
+podman history docker.io/oxidized/oxidized:0.35.0
 
 # Verify image architecture
-podman inspect docker.io/oxidized/oxidized:0.30.1 | \
+podman inspect docker.io/oxidized/oxidized:0.35.0 | \
     jq -r '.[0].Architecture'
 ```
 
@@ -442,10 +448,10 @@ podman logs oxidized
 
 ```bash
 # Remove corrupted image
-podman rmi docker.io/oxidized/oxidized:0.31.0
+podman rmi docker.io/oxidized/oxidized:0.36.0
 
 # Re-pull image
-podman pull docker.io/oxidized/oxidized:0.31.0
+podman pull docker.io/oxidized/oxidized:0.36.0
 
 # Restart service
 sudo systemctl restart oxidized.service
@@ -464,8 +470,8 @@ sudo systemctl restart oxidized.service
 set -euo pipefail
 
 # Variables
-OLD_VERSION="${1:-0.30.1}"
-NEW_VERSION="${2:-0.31.0}"
+OLD_VERSION="${1:-0.35.0}"
+NEW_VERSION="${2:-0.36.0}"
 BACKUP_DIR="/var/backups/oxidized/$(date +%Y%m%d_%H%M%S)"
 
 echo "🔄 Upgrading Oxidized from ${OLD_VERSION} to ${NEW_VERSION}"

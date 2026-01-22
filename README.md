@@ -104,7 +104,7 @@ configurations, tracks changes using Git, and supports 130+ device models.
 │  │              systemd (Quadlets)                     │   │
 │  │                                                     │   │
 │  │  ┌──────────────────────────────────────────────┐  │   │
-│  │  │    Podman Container (oxidized:0.30.1)       │  │   │
+│  │  │    Podman Container (oxidized:0.35.0)       │  │   │
 │  │  │                                              │  │   │
 │  │  │  🤖 Oxidized Service                         │  │   │
 │  │  │     ├─ REST API (port 8888)                 │  │   │
@@ -425,7 +425,7 @@ OXIDIZED_ROOT="/var/lib/oxidized"
 
 # Container image (pinned version)
 
-OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.30.1"
+OXIDIZED_IMAGE="docker.io/oxidized/oxidized:0.35.0"
 
 # Device credentials (global defaults)
 

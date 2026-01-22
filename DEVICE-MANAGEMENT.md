@@ -1150,6 +1150,34 @@ tail -f /var/lib/oxidized/data/oxidized.log | grep -i "cipher\|algorithm\|ssh"
 2. Try similar model (e.g., `ios` for many Cisco devices)
 3. Check Oxidized documentation for custom models
 
+**Model Name Errors (Device Not Showing in Web UI):**
+
+If a device is in `router.db` but not appearing in the web UI, check for model name errors:
+
+1. **Check logs for ModelNotFound errors:**
+   ```bash
+   sudo tail -50 /var/lib/oxidized/data/oxidized.log | grep -i "modelnotfound\|unknown model"
+   ```
+
+2. **Common mistakes:**
+   - ❌ `tp-link` (with hyphen) → ✅ `tplink` (no hyphen)
+   - ❌ `Cisco-IOS` → ✅ `ios` (lowercase, no hyphen)
+   - ❌ `Juniper` → ✅ `junos` (specific model name)
+
+3. **Verify model name:**
+   - Model names are case-sensitive and must match exactly
+   - Check official model list: https://github.com/ytti/oxidized/tree/master/lib/oxidized/model
+   - Model file name = model name (e.g., `tplink.rb` → use `tplink`)
+
+4. **Fix:**
+   ```bash
+   # Edit router.db
+   sudo vim /var/lib/oxidized/config/router.db
+   # Correct the model name (e.g., change tp-link to tplink)
+   # Restart service
+   sudo systemctl restart oxidized.service
+   ```
+
 ---
 
 ## Validation Tools
@@ -1463,4 +1491,4 @@ sudo rm /var/lib/oxidized/config/router.db.backup.*
 ---
 
 **Last Updated:** 2026-01-18
-**Oxidized Version:** 0.30.1
+**Oxidized Version:** 0.35.0

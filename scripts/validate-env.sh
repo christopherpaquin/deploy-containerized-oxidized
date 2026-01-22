@@ -154,7 +154,7 @@ check_security() {
   # Check for latest image tag
   if [[ "${OXIDIZED_IMAGE:-}" == *":latest" ]]; then
     log_warn "Image uses 'latest' tag: ${OXIDIZED_IMAGE}"
-    echo "  Recommendation: Pin to specific version (e.g., :0.30.1)"
+    echo "  Recommendation: Pin to specific version (e.g., :0.35.0)"
   else
     log_success "Image is pinned to version: ${OXIDIZED_IMAGE}"
   fi

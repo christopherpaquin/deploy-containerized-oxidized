@@ -520,4 +520,4 @@ ls -la /var/lib/oxidized/config/output/
 ---
 
 **Last Updated:** 2026-01-18
-**Oxidized Version:** 0.30.1
+**Oxidized Version:** 0.35.0

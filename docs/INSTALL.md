@@ -326,7 +326,7 @@ podman ps
 
 # Expected output should show oxidized container running
 # CONTAINER ID  IMAGE                              COMMAND  CREATED
-# abc123def456  docker.io/oxidized/oxidized:0.30.1          2 minutes ago
+# abc123def456  docker.io/oxidized/oxidized:0.35.0          2 minutes ago
 # STATUS        PORTS                   NAMES
 # Up 2 minutes  0.0.0.0:8888->8888/tcp  oxidized
 ```
