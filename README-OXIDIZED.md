@@ -121,10 +121,16 @@ password: your_secure_password
 interval: 3600  # 1 hour
 
 # REST API and Web UI (oxidized-web extension)
+# IMPORTANT: oxidized 0.35.0 with oxidized-web 0.18.0 requires BOTH formats:
+#   - New format: extensions.oxidized-web (for future compatibility)
+#   - Legacy format: rest: (required for web server to initialize)
+# The deprecated warning is expected and harmless
 extensions:
   oxidized-web:
     host: 0.0.0.0
     port: 8888
+# Legacy format (required for oxidized-web initialization in 0.35.0)
+rest: 0.0.0.0:8888
 
 # CSV inventory source (router.db)
 source:
@@ -1247,7 +1253,57 @@ POLL_INTERVAL=7200  # Increase from 3600
 THREADS=15          # Decrease from 30
 ```
 
-#### Web UI Not Accessible
+#### Web UI Not Accessible / Backend Not Responding
+
+**Symptoms**:
+- 502 Bad Gateway error from nginx
+- Health check shows "Backend not responding"
+- Web UI doesn't load
+- REST API returns connection refused
+
+**Root Cause (oxidized 0.35.0 + oxidized-web 0.18.0)**:
+The oxidized-web extension requires **both** the new `extensions.oxidized-web` format AND the legacy `rest:` format to initialize properly. Using only the new format will cause the web server to not start.
+
+**Solution - Verify Configuration**:
+```bash
+# Check if both formats are present
+sudo cat /var/lib/oxidized/config/config | grep -A 5 "extensions:"
+
+# Should show:
+# extensions:
+#   oxidized-web:
+#     host: 0.0.0.0
+#     port: 8888
+# rest: 0.0.0.0:8888
+```
+
+**If missing the `rest:` line, fix it**:
+```bash
+# Edit the config template
+vim /root/deploy-containerized-oxidized/config/oxidized/config.template
+
+# Ensure it has BOTH formats (see config.template for exact format)
+# Then redeploy:
+cd /root/deploy-containerized-oxidized
+sudo ./scripts/deploy.sh
+sudo systemctl restart oxidized.service
+```
+
+**Verify Web Server Started**:
+```bash
+# Check logs for web server startup message
+sudo podman logs oxidized | grep "Oxidized-web server listening"
+
+# Should show:
+# Oxidized-web server listening on 0.0.0.0:8888
+
+# Test backend directly
+curl http://127.0.0.1:8889/nodes.json
+
+# Should return JSON, not connection refused
+```
+
+**Note**: You may see a deprecation warning about `rest:` being deprecated. This is **expected and harmless**. Both formats are required for oxidized 0.35.0 compatibility.
 
 **Check Web UI is enabled**:
 ```bash
@@ -1309,6 +1365,7 @@ sudo systemctl restart oxidized.service
 
 4. **Review repository documentation**:
    - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+   - [docs/TROUBLESHOOTING-WEB-UI.md](docs/TROUBLESHOOTING-WEB-UI.md) - Web UI / Backend Not Responding
    - [docs/monitoring/ZABBIX.md](docs/monitoring/ZABBIX.md)
 
 ---

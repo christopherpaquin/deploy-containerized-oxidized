@@ -11,7 +11,9 @@ password: {{OXIDIZED_PASSWORD}}
 interval: {{POLL_INTERVAL}}
 
 # Log configuration
-log: /home/oxidized/.config/oxidized/data/oxidized.log
+# DEPRECATED: "log" is deprecated, use "logger" instead
+logger:
+  file: /home/oxidized/.config/oxidized/data/oxidized.log
 
 # Debugging
 debug: {{DEBUG}}
@@ -24,11 +26,16 @@ next_adds_job: false
 # REST API and Web UI configuration (oxidized-web extension)
 # Note: Inside container, always bind to 0.0.0.0
 # Port publishing in Quadlet exposes this to OXIDIZED_API_HOST externally
-# DEPRECATED: "rest" and "web" are deprecated, use "extensions.oxidized-web" instead
+# IMPORTANT: oxidized 0.35.0 with oxidized-web 0.18.0 requires BOTH formats:
+#   - New format: extensions.oxidized-web (for future compatibility)
+#   - Legacy format: rest: (required for web server to initialize)
+# The deprecated warning is expected and harmless
 extensions:
   oxidized-web:
     host: 0.0.0.0
     port: 8888
+# Legacy format (required for oxidized-web initialization in 0.35.0)
+rest: 0.0.0.0:8888
 
 # Input configuration
 input:

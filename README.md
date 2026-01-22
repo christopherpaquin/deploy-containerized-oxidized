@@ -772,6 +772,7 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
 - **[docs/UPGRADE.md](docs/UPGRADE.md)** - Upgrade procedures
 - **[docs/PREREQUISITES.md](docs/PREREQUISITES.md)** - Prerequisite details
 - **[docs/DECISIONS.md](docs/DECISIONS.md)** - Architecture decisions
+- **[docs/TROUBLESHOOTING-WEB-UI.md](docs/TROUBLESHOOTING-WEB-UI.md)** - Web UI / Backend Not Responding troubleshooting
 - **[docs/monitoring/ZABBIX.md](docs/monitoring/ZABBIX.md)** - Zabbix monitoring setup
 
 ### Templates

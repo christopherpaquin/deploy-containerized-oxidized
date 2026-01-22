@@ -290,18 +290,23 @@ password: changeme
 interval: 3600  # 1 hour
 
 # Logging
+# DEPRECATED: "log" is deprecated, use "logger" instead
 
-log: /home/oxidized/.config/oxidized/data/oxidized.log
+logger:
+  file: /home/oxidized/.config/oxidized/data/oxidized.log
 debug: false
 
 # REST API and Web UI (oxidized-web extension)
-# DEPRECATED: "rest" and "web" are deprecated in newer versions
-# Use "extensions.oxidized-web" instead
-
+# IMPORTANT WORKAROUND: oxidized 0.35.0 with oxidized-web 0.18.0 requires BOTH formats:
+#   - New format: extensions.oxidized-web (for future compatibility)
+#   - Legacy format: rest: (required for web server to initialize)
+# The deprecated warning is expected and harmless. Do not remove the "rest:" line.
 extensions:
   oxidized-web:
     host: 0.0.0.0
     port: 8888
+# Legacy format (required for oxidized-web initialization in 0.35.0)
+rest: 0.0.0.0:8888
 
 # Input methods (how to connect to devices)
 
