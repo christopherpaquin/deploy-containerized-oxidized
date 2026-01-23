@@ -240,7 +240,113 @@ sudo cp /var/lib/oxidized/config/router.db.backup.20260118_143022 \
 sudo systemctl restart oxidized.service
 ```
 
-### Method 1: Edit router.db Directly
+### Method 1: Interactive Device Addition (Recommended)
+
+**Use the interactive add-device script** for a user-friendly, guided experience:
+
+```bash
+
+# Run the interactive script
+
+sudo /var/lib/oxidized/scripts/add-device.sh
+```
+
+**What it does:**
+
+1. ✅ **Prompts for device hostname** with validation
+2. ✅ **Prompts for IP address/FQDN** with validation
+3. ✅ **Shows available OS types** from a comprehensive list
+4. ✅ **Displays existing groups** or lets you create a new one
+5. ✅ **Shows default credentials** from config (username only)
+6. ✅ **Optionally prompts for device-specific credentials**
+7. ✅ **Validates entry format** before adding
+8. ✅ **Creates timestamped backup** in `/var/lib/oxidized/config/backup/`
+9. ✅ **Appends to router.db** (never overwrites)
+10. ✅ **Runs full syntax validation** on all entries
+
+**Example session:**
+```
+╔══════════════════════════════════════════════════════════════════════════╗
+║              Oxidized Device Management Tool                         ║
+║                  Add Device to router.db                             ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+[?] Enter device hostname (e.g., switch01, core-router-01):
+core-router01
+[✓] Hostname: core-router01
+
+[?] Enter IP address or FQDN (e.g., 10.1.1.1 or router.example.com):
+10.1.1.1
+[✓] IP/Hostname: 10.1.1.1
+
+Available Device Models:
+  1   aoscx           - Aruba AOS-CX
+  2   arubaos         - Aruba ArubaOS
+  3   asa             - Cisco ASA
+  ...
+
+[?] Enter device model (e.g., ios, nxos, junos, fortios):
+ios
+[✓] Device model: ios (Cisco IOS)
+
+Existing groups in router.db:
+  - core
+  - datacenter
+  - branch
+
+[?] Enter group name (e.g., datacenter, branch, core, firewalls):
+core
+[✓] Using existing group: core
+
+[INFO] Default credentials from config:
+  Username: netadmin
+  Password: ********** (hidden)
+
+Do you want to override the default credentials for this device? (y/N): n
+[✓] Using default credentials from config
+
+Entry Details:
+  Hostname: core-router01
+  IP/FQDN:  10.1.1.1
+  Model:    ios
+  Group:    core
+  Credentials: Using global defaults
+
+Add this device to router.db? (y/N): y
+
+[INFO] Creating backup...
+[✓] Backup created: /var/lib/oxidized/config/backup/router.db.20260122_143022
+
+[INFO] Adding entry to router.db...
+[✓] Entry added to router.db
+
+[INFO] Running full router.db validation...
+[✓] Validation PASSED
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    Device Added Successfully!                        ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+[✓] Device 'core-router01' has been added to router.db
+[INFO] Oxidized will pick up this device on the next poll cycle
+
+Next steps:
+  1. Test the device: test-device.sh core-router01
+  2. Check Oxidized logs: tail -f /var/lib/oxidized/data/oxidized.log
+  3. Restart Oxidized (if needed): systemctl restart oxidized.service
+```
+
+**Features:**
+
+- 🎯 **Validation at every step** - catches errors before they're added
+- 🔒 **Never overwrites** - only appends to router.db
+- 💾 **Automatic backups** - timestamped backup before any changes
+- 📋 **Shows available options** - OS types, existing groups
+- 🔐 **Secure credential handling** - passwords never displayed
+- ✅ **Full validation** - runs syntax check on all entries after addition
+- 📝 **Clear feedback** - shows exactly what will be added
+
+### Method 2: Edit router.db Directly
 
 ```bash
 
@@ -265,7 +371,7 @@ sudo systemctl restart oxidized.service
 ./scripts/test-device.sh my-router
 ```
 
-### Method 2: Quick Reload (No Restart)
+### Method 3: Quick Reload (No Restart)
 
 ```bash
 
@@ -1265,7 +1371,11 @@ sudo systemctl restart oxidized.service
 
 ```bash
 
-# Add devices
+# Add devices (interactive)
+
+/var/lib/oxidized/scripts/add-device.sh
+
+# Add devices (manual)
 
 vi /var/lib/oxidized/config/router.db
 systemctl restart oxidized.service
@@ -1335,6 +1445,7 @@ These scripts are automatically installed to `/var/lib/oxidized/scripts/` during
 
 | Script | Location | Purpose |
 |--------|----------|---------|
+| `add-device.sh` | `/var/lib/oxidized/scripts/` | Interactive device addition with validation |
 | `validate-router-db.sh` | `/var/lib/oxidized/scripts/` | Validate router.db syntax |
 | `test-device.sh` | `/var/lib/oxidized/scripts/` | Test device connectivity and trigger backup |
 | `health-check.sh` | `/var/lib/oxidized/scripts/` | Check overall system health |

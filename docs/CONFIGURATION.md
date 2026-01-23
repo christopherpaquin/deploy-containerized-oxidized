@@ -364,6 +364,11 @@ The deployment script now includes automatic validation:
 
 ### Manual Validation
 
+**Add device interactively:**
+```bash
+/var/lib/oxidized/scripts/add-device.sh
+```
+
 **Validate router.db syntax:**
 ```bash
 /var/lib/oxidized/scripts/validate-router-db.sh
@@ -433,6 +438,10 @@ chcon -t container_file_t /var/lib/oxidized/config/router.db
 ### Common Commands
 
 ```bash
+
+# Add device interactively
+
+/var/lib/oxidized/scripts/add-device.sh
 
 # Validate router.db
 

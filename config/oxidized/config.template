@@ -23,6 +23,17 @@ retries: {{RETRIES}}
 prompt: !ruby/regexp /^([\w.@-]+[#>]\s?)$/
 next_adds_job: false
 
+# DNS resolution
+# Disable DNS lookups for device IPs (use IP addresses as-is)
+resolve_dns: false
+
+# Global variables
+# Security: Remove secrets from stored configurations
+# This strips out sensitive data like SNMP community strings, passwords, etc.
+# See: https://github.com/ytti/oxidized/blob/master/docs/Configuration.md#removing-secrets
+vars:
+  remove_secret: true
+
 # REST API and Web UI configuration (oxidized-web extension)
 # Note: Inside container, always bind to 0.0.0.0
 # Port publishing in Quadlet exposes this to OXIDIZED_API_HOST externally

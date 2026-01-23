@@ -774,6 +774,7 @@ install_helper_scripts() {
     "health-check.sh"
     "validate-router-db.sh"
     "test-device.sh"
+    "add-device.sh"
   )
 
   for script in "${helper_scripts[@]}"; do
@@ -788,6 +789,14 @@ install_helper_scripts() {
     if [[ "${DRY_RUN}" == "true" ]]; then
       log_info "[DRY-RUN] Would copy: ${src_script} -> ${dst_script}"
     else
+      # Backup existing script if it exists (update scenario)
+      if [[ -f "${dst_script}" ]]; then
+        local backup_file
+        backup_file="${dst_script}.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "${dst_script}" "${backup_file}"
+        log_info "Backed up existing script: ${backup_file}"
+      fi
+
       cp "${src_script}" "${dst_script}"
       chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_script}"
       chmod 755 "${dst_script}"
@@ -1385,9 +1394,10 @@ ${COLOR_BLUE}Next Steps:${COLOR_RESET}
 6. ${COLOR_YELLOW}Run health check:${COLOR_RESET}
    ${OXIDIZED_ROOT}/scripts/health-check.sh
 
-7. ${COLOR_YELLOW}Validate and test devices:${COLOR_RESET}
-   ${OXIDIZED_ROOT}/scripts/validate-router-db.sh
-   ${OXIDIZED_ROOT}/scripts/test-device.sh <device-name>
+7. ${COLOR_YELLOW}Add and manage devices:${COLOR_RESET}
+   ${OXIDIZED_ROOT}/scripts/add-device.sh          # Interactive device addition
+   ${OXIDIZED_ROOT}/scripts/validate-router-db.sh  # Validate router.db syntax
+   ${OXIDIZED_ROOT}/scripts/test-device.sh <device-name>  # Test specific device
 
 ${COLOR_BLUE}Data Locations:${COLOR_RESET}
   Configuration: ${OXIDIZED_ROOT}/config/

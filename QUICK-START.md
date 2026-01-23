@@ -58,6 +58,17 @@ curl http://localhost:8888/nodes.json | jq 'length'
 vim /var/lib/oxidized/config/router.db
 systemctl restart oxidized.service
 
+# Device Management
+
+# Add device interactively (recommended)
+/var/lib/oxidized/scripts/add-device.sh
+
+# Validate router.db syntax
+/var/lib/oxidized/scripts/validate-router-db.sh
+
+# Test specific device
+/var/lib/oxidized/scripts/test-device.sh <device-name>
+
 # Monitoring
 
 watch -n 5 'curl -s http://localhost:8888/nodes.json | jq ".[].status"'

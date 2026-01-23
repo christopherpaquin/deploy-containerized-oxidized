@@ -98,6 +98,50 @@ Network=oxidized-net              # Isolated bridge network
 
 ---
 
+## 🔐 Oxidized Security Configuration
+
+The deployment includes built-in security features in the Oxidized configuration:
+
+### Secret Removal
+
+**Configuration**: `vars.remove_secret: true`
+
+Automatically strips sensitive data from backed-up configurations before storing them in Git:
+
+- SNMP community strings
+- Device passwords
+- Pre-shared keys
+- Authentication credentials
+- API tokens
+- Other sensitive data defined in device models
+
+**Benefits**:
+- Prevents accidental exposure of secrets in Git repository
+- Safer to share configurations for troubleshooting
+- Reduces risk if backup repository is compromised
+- Compliant with security policies requiring secret rotation
+
+**Trade-off**: Stored configurations are not complete and cannot be used directly for device restoration without manually re-adding secrets.
+
+**Reference**: [Oxidized Configuration Documentation - Removing Secrets](https://github.com/ytti/oxidized/blob/master/docs/Configuration.md#removing-secrets)
+
+### DNS Resolution Disabled
+
+**Configuration**: `resolve_dns: false`
+
+Disables DNS lookups for device IP addresses:
+
+**Benefits**:
+- Avoids DNS-based attacks and poisoning
+- Prevents delays from DNS timeouts
+- More predictable behavior with IP addresses
+- Works in environments without DNS
+- Reduces external dependencies
+
+**Best Practice**: Use IP addresses in `router.db` instead of hostnames for maximum reliability and security.
+
+---
+
 ## 🌐 Network Security
 
 ### Podman Network

@@ -121,6 +121,7 @@ Full directory tree with descriptions:
 │   └── <device-configs>            # ✅ ACTIVE: Backed-up device configs
 │
 ├── scripts/                        # ✅ ACTIVE: Helper scripts
+│   ├── add-device.sh               # ✅ ACTIVE: Add device interactively
 │   ├── health-check.sh             # ✅ ACTIVE: System health check
 │   ├── validate-router-db.sh       # ✅ ACTIVE: Validate device inventory
 │   └── test-device.sh              # ✅ ACTIVE: Test device connectivity
@@ -244,6 +245,7 @@ These directories are actively used by Oxidized:
 
 **Contents:**
 
+- `add-device.sh` - Interactive device addition with validation
 - `health-check.sh` - System and service health check
 - `validate-router-db.sh` - Validate router.db syntax and entries
 - `test-device.sh` - Test device connectivity and trigger backup
@@ -351,6 +353,42 @@ Quick reference for important files:
 ## Helper Scripts
 
 Scripts installed in `/var/lib/oxidized/scripts/`:
+
+### `add-device.sh`
+
+**Purpose:** Interactive script to add network devices to router.db
+
+**Usage:**
+```bash
+/var/lib/oxidized/scripts/add-device.sh
+```
+
+**Features:**
+- Interactive prompts for hostname, IP, model, group, and credentials
+- 38+ supported device models with descriptions
+- Spell checking with 50+ typo patterns (tp-link → tplink, arista → eos)
+- Shows existing groups or creates new ones
+- Automatic timestamped backups in `/var/lib/oxidized/config/backup/`
+- Full syntax validation after addition
+- Append-only (never overwrites router.db)
+
+**Interactive Commands:**
+- `list` - Show all device models
+- `help` - Display common typo guide
+
+**Example:**
+```bash
+/var/lib/oxidized/scripts/add-device.sh
+
+# Follow prompts to add device:
+# 1. Hostname: core-router01
+# 2. IP: 10.1.1.1
+# 3. Model: ios (or type 'help')
+# 4. Group: core
+# 5. Credentials: Use defaults or override
+```
+
+**Documentation:** See [`docs/ADD-DEVICE.md`](docs/ADD-DEVICE.md) for complete guide.
 
 ### `health-check.sh`
 

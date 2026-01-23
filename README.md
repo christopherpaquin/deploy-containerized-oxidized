@@ -85,10 +85,12 @@ configurations, tracks changes using Git, and supports 130+ device models.
 - **SELinux enforcing**: Proper context labeling (`:Z` mounts)
 - **Isolated storage**: Dedicated paths under `/var/lib/oxidized`
 - **No secrets in repo**: Credentials managed via `.env` file
+- **Secret removal**: Automatically strips passwords, SNMP strings, and keys from backups ([docs](https://github.com/ytti/oxidized/blob/master/docs/Configuration.md#removing-secrets))
+- **DNS disabled**: Prevents DNS-based attacks, uses IP addresses only
 - **Minimal capabilities**: Only SETUID/SETGID for init system
 - **NoNewPrivileges**: Prevents privilege escalation
 
-**Note**: See [DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md) for container security considerations.
+**Note**: See [SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for complete security documentation.
 
 ---
 
@@ -555,6 +557,125 @@ sudo ./scripts/health-check.sh
 # Cron job example (check every hour)
 
 0 * * * * /path/to/deploy-containerized-oxidized/scripts/health-check.sh || mail -s "Oxidized Health Check Failed" admin@example.com
+```
+
+### Add Device Script
+
+**Path**: `scripts/add-device.sh`
+
+**Purpose**: Interactive script to add network devices to the inventory
+
+**Usage**:
+```bash
+sudo /var/lib/oxidized/scripts/add-device.sh
+```
+
+**Features**:
+
+- Interactive prompts with validation for hostname, IP, model, and group
+- Shows list of 38+ supported device models
+- Displays existing groups or allows creating new ones
+- Shows default credentials from config (username only, password masked)
+- Optional per-device credential override
+- Comprehensive spell checking with 50+ typo patterns
+- Intelligent suggestions for common mistakes (tp-link → tplink, arista → eos)
+- Automatic timestamped backups in `/var/lib/oxidized/config/backup/`
+- Full syntax validation after addition
+- Append-only operation (never overwrites router.db)
+
+**Interactive Commands**:
+```bash
+
+# During model selection:
+
+list   # Show all 38+ device models again
+help   # Display common typo guide
+```
+
+**What it does**:
+
+1. Prompts for device hostname with duplicate detection
+2. Prompts for IP address or FQDN with validation
+3. Shows available OS types (ios, nxos, junos, fortios, etc.)
+4. Displays existing groups or creates new group
+5. Shows default credentials, allows override
+6. Validates entry format
+7. Creates timestamped backup of router.db
+8. Appends entry to router.db
+9. Runs full validation on all devices
+
+**Example**:
+```bash
+sudo /var/lib/oxidized/scripts/add-device.sh
+
+# Follow interactive prompts:
+# 1. Hostname: core-router01
+# 2. IP: 10.1.1.1
+# 3. Model: ios (or type 'help' to see common typos)
+# 4. Group: core (or create new)
+# 5. Credentials: Use defaults or override
+# 6. Confirm and add
+```
+
+**Spell Checking**: Automatically detects and corrects common typos like:
+- `tp-link` → `tplink`
+- `cisco-ios` → `ios`
+- `arista` → `eos` (vendor vs. model)
+- `fortigate` → `fortios`
+- And 50+ more patterns
+
+**Safety**: Never overwrites router.db, creates backup before changes, validates all entries.
+
+**Documentation**: See [`docs/ADD-DEVICE.md`](docs/ADD-DEVICE.md) for complete guide.
+
+### Validate Router DB Script
+
+**Path**: `scripts/validate-router-db.sh`
+
+**Purpose**: Validate router.db syntax and format
+
+**Usage**:
+```bash
+/var/lib/oxidized/scripts/validate-router-db.sh [path-to-router.db]
+```
+
+**Checks**:
+
+- File format (6 fields, colon-delimited)
+- Device name format
+- Duplicate device names
+- IP address/hostname format
+- Duplicate IP addresses (warning)
+- Empty required fields
+- Known device models (warning if unknown)
+- Credential consistency
+
+**Automatically run by**: `add-device.sh` after adding new devices
+
+### Test Device Script
+
+**Path**: `scripts/test-device.sh`
+
+**Purpose**: Test connectivity and trigger backup for a specific device
+
+**Usage**:
+```bash
+/var/lib/oxidized/scripts/test-device.sh <device-name>
+```
+
+**Checks**:
+
+- Container is running
+- Device exists in router.db
+- Device is registered in Oxidized
+- Network connectivity (ping)
+- SSH port is reachable
+- Triggers backup
+- Shows recent logs
+
+**Example**:
+```bash
+/var/lib/oxidized/scripts/test-device.sh core-router01
 ```
 
 ### Uninstall Script
