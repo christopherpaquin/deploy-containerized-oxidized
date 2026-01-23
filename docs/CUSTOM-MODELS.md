@@ -283,7 +283,7 @@ Error: unknown model: tplink
    # Edit config
    sudo vim /var/lib/oxidized/config/config
    # Set: debug: true
-   
+
    # Restart and check logs
    sudo systemctl restart oxidized.service
    podman logs oxidized | tail -100
