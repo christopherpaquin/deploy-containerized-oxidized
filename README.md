@@ -472,15 +472,20 @@ All host directories are automatically mounted into the container:
 
 **Location**: `/var/lib/oxidized/config/router.db` (on host)
 
-**Format**: Colon-delimited CSV
+**Format**: Colon-delimited CSV with explicit credentials required
 
 ```text
 name:ip:model:group:username:password
-core-router01:10.1.1.1:ios:core::
-edge-switch01:10.1.2.1:procurve:distribution::
+core-router01:10.1.1.1:ios:core:admin:password123
+edge-switch01:10.1.2.1:procurve:distribution:admin:password123
 ```
 
-**Complete device inventory documentation**: [README-OXIDIZED.md - Device Inventory](README-OXIDIZED.md#-device-inventory-routerdb)
+⚠️ **CRITICAL**: Empty credential fields (`::`) will cause authentication failures. Always provide explicit credentials for each device.
+
+**Complete documentation**:
+- **Credentials**: [docs/CREDENTIALS-GUIDE.md](docs/CREDENTIALS-GUIDE.md) ⭐ START HERE
+- **Device Management**: [docs/DEVICE-MANAGEMENT.md](docs/DEVICE-MANAGEMENT.md)
+- **Usage Guide**: [docs/README-OXIDIZED.md](docs/README-OXIDIZED.md)
 
 ---
 
@@ -522,6 +527,66 @@ sudo ./scripts/deploy.sh --skip-validation
 ```
 
 **Idempotent**: Safe to re-run for upgrades or configuration changes.
+
+### Service Management Scripts
+
+**Purpose**: Manage Oxidized service with automatic PID file cleanup
+
+These wrapper scripts handle a common issue where the PID file (`/home/oxidized/.config/oxidized/data/oxidized.pid`) is not removed when the container stops, causing startup failures.
+
+#### Start Service
+
+**Path**: `scripts/oxidized-start.sh`
+
+**Usage**:
+```bash
+sudo /var/lib/oxidized/scripts/oxidized-start.sh
+```
+
+**What it does**:
+- Checks for existing PID file
+- Verifies if process is actually running
+- Removes stale PID file if needed
+- Starts the systemd service
+- Verifies successful startup
+
+#### Stop Service
+
+**Path**: `scripts/oxidized-stop.sh`
+
+**Usage**:
+```bash
+sudo /var/lib/oxidized/scripts/oxidized-stop.sh
+```
+
+**What it does**:
+- Stops the systemd service gracefully
+- Verifies container has stopped
+- Removes PID file
+- Confirms clean shutdown
+
+#### Restart Service
+
+**Path**: `scripts/oxidized-restart.sh`
+
+**Usage**:
+```bash
+sudo /var/lib/oxidized/scripts/oxidized-restart.sh
+```
+
+**What it does**:
+- Stops service gracefully
+- Verifies container shutdown
+- Removes stale PID file
+- Starts service fresh
+- Verifies successful restart
+
+**When to use**:
+- ✅ Use these scripts when `systemctl restart oxidized.service` fails with PID file errors
+- ✅ Use for reliable restarts after configuration changes
+- ✅ Use in automation scripts to ensure clean restarts
+
+**Documentation**: See [docs/SERVICE-MANAGEMENT.md](docs/SERVICE-MANAGEMENT.md) for complete guide.
 
 ### Health Check Script
 

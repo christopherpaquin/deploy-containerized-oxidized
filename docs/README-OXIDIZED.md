@@ -9,6 +9,7 @@ This guide covers how to use, configure, and troubleshoot Oxidized once deployed
 ## 📋 Table of Contents
 
 - [What is Oxidized?](#-what-is-oxidized)
+- [Quick Links](#-quick-links)
 - [Service Management](#-service-management)
 - [Configuration](#-configuration)
 - [Device Inventory](#-device-inventory)
@@ -21,6 +22,24 @@ This guide covers how to use, configure, and troubleshoot Oxidized once deployed
 - [Troubleshooting](#-troubleshooting)
 - [Security Considerations](#-security-considerations)
 - [External Documentation](#-external-documentation)
+
+---
+
+## 📖 Quick Links
+
+**Essential Guides:**
+
+- **[CREDENTIALS-GUIDE.md](CREDENTIALS-GUIDE.md)** - ⭐ Complete credential documentation (Web UI login vs device credentials, CSV parsing behavior)
+- **[DEVICE-MANAGEMENT.md](DEVICE-MANAGEMENT.md)** - Adding, updating, and managing network devices
+- **[QUICK-START.md](../QUICK-START.md)** - Getting started quickly
+- **[SERVICE-MANAGEMENT.md](SERVICE-MANAGEMENT.md)** - Starting, stopping, and managing the Oxidized service
+
+**Common Tasks:**
+
+- **Add a device**: Use `/var/lib/oxidized/scripts/add-device.sh` (interactive) or edit `router.db` manually
+- **Test connectivity**: `/var/lib/oxidized/scripts/test-device.sh <device-name>`
+- **View logs**: `podman logs -f oxidized` or `tail -f /var/lib/oxidized/data/oxidized.log`
+- **Check health**: `/var/lib/oxidized/scripts/health-check.sh`
 
 ---
 

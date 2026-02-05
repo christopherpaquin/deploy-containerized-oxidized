@@ -126,6 +126,36 @@ These credentials must be:
 3. **Read-only** access level (recommended for security)
 4. **Changed** from example values to your actual credentials
 
+### 🔴 CRITICAL: CSV Credential Behavior
+
+**Due to CSV parsing behavior, you MUST provide explicit credentials in router.db - empty fields do NOT trigger global credential fallback!**
+
+**What Happens:**
+- Empty fields (`::`) are parsed as **empty strings**, not undefined/null
+- Oxidized uses these empty strings as the actual credentials
+- Authentication fails because the username/password are literally ""
+
+**The Fix:**
+- Always provide explicit credentials in router.db
+- If using "global" credentials, repeat them for each device
+- They should match your OXIDIZED_USERNAME/OXIDIZED_PASSWORD from .env
+
+**Examples:**
+
+❌ **WRONG** - This will fail with authentication errors:
+```
+device1:10.1.1.1:ios:group::
+device2:10.1.1.2:ios:group::
+```
+*Empty fields = empty username/password = login fails!*
+
+✅ **CORRECT** - Explicit credentials work:
+```
+device1:10.1.1.1:ios:group:admin:thunder123
+device2:10.1.1.2:ios:group:admin:thunder123
+```
+*Same credentials on each line (matching .env values)*
+
 ### How to Change
 
 ```bash
@@ -177,23 +207,23 @@ sudo ./scripts/deploy.sh
 
 **Question**: What credentials do I need?
 
-**Answer**: Device credentials (from .env)
+**Answer**: Device credentials (explicit values matching your .env)
 
 **Example**:
 ```bash
+# Your .env has:
+# OXIDIZED_USERNAME="admin"
+# OXIDIZED_PASSWORD="thunder123"
 
-# In router.db:
-
-core-router:10.1.1.1:ios:core::
-
-# The :: at the end means "use global credentials from .env"
+# In router.db (must provide explicit credentials):
+core-router:10.1.1.1:ios:core:admin:thunder123
 
 # Oxidized will SSH to 10.1.1.1 using:
+# Username: admin (explicitly provided in router.db)
+# Password: thunder123 (explicitly provided in router.db)
 
-# Username: admin (from OXIDIZED_USERNAME)
-
-# Password: thunder123 (from OXIDIZED_PASSWORD)
-
+# ⚠️ NOTE: You CANNOT use :: for credentials. Empty fields are
+# interpreted as empty strings, not as "use global defaults"
 ```
 
 ### Scenario 2: Viewing Backed-Up Configs
@@ -270,13 +300,15 @@ OXIDIZED_PASSWORD="SecureBackupPass123!"
 
 2. Create backup account on ALL devices with same credentials
 
-3. Add devices to `router.db` with empty username/password:
+3. Add devices to `router.db` with **explicit credentials** (same as .env):
 
 ```
-router1:10.1.1.1:ios:core::
-router2:10.1.1.2:ios:core::
-router3:10.1.1.3:ios:core::
+router1:10.1.1.1:ios:core:network-backup:SecureBackupPass123!
+router2:10.1.1.2:ios:core:network-backup:SecureBackupPass123!
+router3:10.1.1.3:ios:core:network-backup:SecureBackupPass123!
 ```
+
+⚠️ **Note**: You must repeat the credentials for each device. Empty fields (`::`) will NOT work as they're parsed as empty strings, not as "use global defaults".
 
 ### Option B: Per-Device Credentials
 
@@ -295,19 +327,19 @@ firewall1:10.1.3.1:fortios:security:fwadmin:fwpass
 ### Option C: Mixed Approach
 
 1. Set common credentials in `.env`
-2. Override only for devices that differ
+2. Use explicit credentials for most devices, override for exceptions
 
 Example:
 ```bash
-
 # .env has admin/commonpass
 
 # router.db:
-
-router1:10.1.1.1:ios:core::                    # Uses global admin/commonpass
-router2:10.1.1.2:ios:core::                    # Uses global admin/commonpass
-special-router:10.1.1.10:ios:core:root:special # Uses root/special
+router1:10.1.1.1:ios:core:admin:commonpass     # Matches .env credentials
+router2:10.1.1.2:ios:core:admin:commonpass     # Matches .env credentials
+special-router:10.1.1.10:ios:core:root:special # Uses different credentials
 ```
+
+⚠️ **Note**: All devices require explicit credentials in router.db. The .env values are just a reference/default - you must still type them in router.db.
 
 ---
 
@@ -372,18 +404,24 @@ podman logs oxidized | grep -i "auth\|login\|password"
 
 ### "Some devices work, others don't"
 
-**Likely**: Different credentials on different devices
+**Likely**: Either empty credentials or different credentials on different devices
 
-**Solution**: Use per-device credentials in `router.db`:
+**Solution 1 - Check for empty fields:**
+```
+# ❌ WRONG - Empty credentials will fail
+router1:10.1.1.1:ios:core::
+router2:10.1.1.2:ios:core::
+
+# ✅ CORRECT - Provide explicit credentials
+router1:10.1.1.1:ios:core:admin:password123
+router2:10.1.1.2:ios:core:admin:password123
 ```
 
-# Working device (using global creds)
-
-router1:10.1.1.1:ios:core::
-
-# Non-working device (needs specific creds)
-
-router2:10.1.1.2:ios:core:differentuser:differentpass
+**Solution 2 - Per-device credentials:**
+```
+# Different credentials on each device
+router1:10.1.1.1:ios:core:admin1:pass1
+router2:10.1.1.2:ios:core:admin2:pass2
 ```
 
 ---
@@ -408,19 +446,17 @@ OXIDIZED_PASSWORD="YourDevicePassword123!"
 ### Example router.db (Device Inventory)
 
 ```
-
-# Using global credentials from .env:
-
-core-router01:10.1.1.1:ios:core::
-core-router02:10.1.1.2:ios:core::
+# Using same credentials for multiple devices (matching .env values):
+core-router01:10.1.1.1:ios:core:admin:password123
+core-router02:10.1.1.2:ios:core:admin:password123
 
 # Using per-device credentials:
-
 edge-router01:10.2.1.1:ios:edge:edgeuser:edgepass
 
 # FQDN instead of IP:
+dc-switch01:switch1.datacenter.local:nxos:datacenter:admin:password123
 
-dc-switch01:switch1.datacenter.local:nxos:datacenter::
+# ⚠️ NEVER use empty credentials (::) - they will fail!
 ```
 
 ### Example nginx .htpasswd (Web UI Users)

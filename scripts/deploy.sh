@@ -775,6 +775,10 @@ install_helper_scripts() {
     "validate-router-db.sh"
     "test-device.sh"
     "add-device.sh"
+    "oxidized-start.sh"
+    "oxidized-stop.sh"
+    "oxidized-restart.sh"
+    "force-backup.sh"
   )
 
   for script in "${helper_scripts[@]}"; do

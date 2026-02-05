@@ -33,7 +33,7 @@ SECRET_PATTERN='(sk_live_[a-zA-Z0-9]{24,}|sk_test_[a-zA-Z0-9]{24,}|pk_live_[a-zA
 HIGH_CONFIDENCE_PATTERN='(BEGIN|PRIVATE|KEY|ghp_|sk_|AIza|AKIA)'
 
 # Combined allowlist pattern (for fast filtering)
-ALLOWLIST_PATTERN='(YOUR_API_KEY_HERE|your-api-key-here|example\.com|test_key|demo_key|placeholder|CHANGE_ME|REPLACE_ME|api_key\s*=|API_KEY\s*=|access_token\s*=|secret\s*=|https?://[a-zA-Z0-9.-]+|api/v[0-9]+|/api/|^\s*#.*(api|key|token|secret)|^\s*//.*(api|key|token|secret)|^\s*\*.*(api|key|token|secret))'
+ALLOWLIST_PATTERN='(YOUR_API_KEY_HERE|your-api-key-here|example\.com|test_key|demo_key|placeholder|CHANGE_ME|REPLACE_ME|api_key\s*=|API_KEY\s*=|access_token\s*=|secret\s*=|https?://[a-zA-Z0-9.-]+|api/v[0-9]+|/api/|^\s*#.*(api|key|token|secret)|^\s*//.*(api|key|token|secret)|^\s*\*.*(api|key|token|secret)|ExecStart=|ExecStop=|ExecReload=)'
 
 # Files to exclude from scanning (compiled into single pattern for efficiency)
 EXCLUDE_PATTERN='(\.git/|\.env\.example$|\.gitignore$|artifacts/|\.pre-commit-cache/|node_modules/|\.venv/|venv/|__pycache__/|\.pytest_cache/|\.mypy_cache/|dist/|build/)'

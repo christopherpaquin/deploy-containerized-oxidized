@@ -1,5 +1,8 @@
 # Oxidized Authentication Setup
 
+> **📘 Note**: This document covers **Web UI login credentials** (nginx authentication).
+> For **device credentials** (how Oxidized logs into network devices), see [CREDENTIALS-GUIDE.md](CREDENTIALS-GUIDE.md).
+
 ## ✅ Status: AUTOMATED AUTHENTICATION
 
 Authentication is **automatically configured** during deployment using credentials from the `.env` file.
@@ -491,6 +494,7 @@ sudo systemctl restart nginx
 
 For more information, see:
 
-- Main documentation: `README.md`
-- Security guide: `SECURITY-AUTHENTICATION.md`
-- Deployment notes: `DEPLOYMENT-NOTES.md`
+- **Device credentials** (network device login): [CREDENTIALS-GUIDE.md](CREDENTIALS-GUIDE.md)
+- Main documentation: [README.md](../README.md)
+- Security guide: [SECURITY-AUTHENTICATION.md](SECURITY-AUTHENTICATION.md)
+- Deployment notes: [DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md)

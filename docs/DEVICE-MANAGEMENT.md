@@ -389,30 +389,31 @@ podman exec oxidized pkill -HUP ruby
 
 ### Credential Modes
 
-**Global Credentials (Recommended):**
+⚠️ **IMPORTANT**: See [CREDENTIALS-GUIDE.md](CREDENTIALS-GUIDE.md) for complete credential documentation.
+
+**Quick Summary:**
+
+**All devices require explicit credentials in router.db:**
 ```bash
-
-# Set in .env file
-
+# Set in .env file (for reference)
 OXIDIZED_USERNAME="netadmin"
 OXIDIZED_PASSWORD="YourPassword"
 
-# In router.db, leave username/password blank
-
-router1:10.1.1.1:ios:core::
-router2:10.1.1.2:ios:core::
+# In router.db, provide explicit credentials (even if "global"):
+router1:10.1.1.1:ios:core:netadmin:YourPassword
+router2:10.1.1.2:ios:core:netadmin:YourPassword
 ```
 
 **Per-Device Credentials:**
 ```bash
-
-# Specify in router.db
-
+# Each device can have different credentials:
 router1:10.1.1.1:ios:core:admin1:Pass123
 router2:10.1.1.2:junos:core:admin2:Pass456
 ```
 
-⚠️ **Security:** Per-device credentials are stored in plaintext. Use `chmod 600 router.db`.
+🔴 **CRITICAL**: Empty credential fields (`::`) do NOT trigger global credential fallback - they are parsed as empty strings and will cause authentication failures! Always provide explicit credentials.
+
+⚠️ **Security:** Credentials are stored in plaintext in router.db. Use `chmod 600 router.db`.
 
 ---
 

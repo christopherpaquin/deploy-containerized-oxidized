@@ -36,11 +36,18 @@ curl http://localhost:8888/nodes.json | jq
 
 ```bash
 
-# Service Management
+# Service Management (standard systemctl)
 
 systemctl status oxidized.service
 systemctl restart oxidized.service
 journalctl -u oxidized.service -f
+
+# Service Management (with PID cleanup - recommended)
+# Use these if service won't restart due to PID file errors
+
+/var/lib/oxidized/scripts/oxidized-start.sh    # Start with PID cleanup
+/var/lib/oxidized/scripts/oxidized-stop.sh     # Stop with PID cleanup
+/var/lib/oxidized/scripts/oxidized-restart.sh  # Restart with PID cleanup
 
 # Container Management
 
@@ -130,7 +137,25 @@ See `DEVICE-MANAGEMENT.md` for full backup documentation.
 
 ## Troubleshooting
 
-### Service won't start
+### Service won't start (PID file error)
+
+If you see errors about PID file already existing:
+
+```bash
+# Check for PID file
+ls -la /var/lib/oxidized/data/oxidized.pid
+
+# Use the restart script (automatically removes stale PID file)
+sudo /var/lib/oxidized/scripts/oxidized-restart.sh
+
+# OR manually remove PID file
+sudo rm -f /var/lib/oxidized/data/oxidized.pid
+sudo systemctl start oxidized.service
+```
+
+See [docs/SERVICE-MANAGEMENT.md](docs/SERVICE-MANAGEMENT.md) for details.
+
+### Service won't start (other reasons)
 
 ```bash
 journalctl -u oxidized.service -n 50

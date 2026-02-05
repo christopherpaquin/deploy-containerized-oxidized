@@ -133,9 +133,9 @@ datacenter
   Username: netadmin
   Password: ********** (hidden)
 
-Do you want to override the default credentials for this device? (y/N): n
+Do you want to use the default credentials for this device? (Y/n): y
 
-[✓] Using default credentials from config
+[✓] Using credentials from config
 
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║                      Entry to be Added                               ║
@@ -146,10 +146,10 @@ Entry Details:
   IP/FQDN:  10.10.1.100
   Model:    procurve
   Group:    datacenter
-  Credentials: Using global defaults
+  Credentials: Using credentials from config
 
 Router.db format:
-  datacenter-sw01:10.10.1.100:procurve:datacenter::
+  datacenter-sw01:10.10.1.100:procurve:datacenter:netadmin:password123
 
 [✓] Entry format is valid
 
