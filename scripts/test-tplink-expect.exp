@@ -1,0 +1,72 @@
+#!/usr/bin/expect -f
+# TP-Link Command Discovery using Expect
+
+set timeout 10
+set device_ip [lindex $argv 0]
+set username [lindex $argv 1]
+set password [lindex $argv 2]
+
+if {$device_ip == ""} { set device_ip "10.1.10.48" }
+if {$username == ""} { set username "admin" }
+if {$password == ""} { set password "thunder123" }
+
+log_user 1
+
+puts "\n========================================\n"
+puts "TP-Link Command Discovery\n"
+puts "========================================\n"
+puts "Device: $device_ip"
+puts "User: $username\n"
+
+# Connect via telnet
+spawn telnet $device_ip
+
+# Login
+expect {
+    "User:" { send "$username\r" }
+    timeout { puts "ERROR: No User prompt"; exit 1 }
+}
+
+expect {
+    "Password:" { send "$password\r" }
+    timeout { puts "ERROR: No Password prompt"; exit 1 }
+}
+
+# Wait for prompt
+expect {
+    -re "(>|#)" { puts "\n✓ Logged in successfully\n" }
+    "Login invalid" { puts "ERROR: Login failed"; exit 1 }
+    timeout { puts "ERROR: Login timeout"; exit 1 }
+}
+
+# Test help/? command
+puts "\n--- Testing '?' command ---"
+send "?\r"
+expect -re "(>|#)"
+sleep 1
+
+# Test show ?
+puts "\n--- Testing 'show ?' command ---"
+send "show ?\r"
+expect -re "(>|#)"
+sleep 1
+
+# Test show system-info
+puts "\n--- Testing 'show system-info' command ---"
+send "show system-info\r"
+expect -re "(>|#)"
+sleep 1
+
+# Test show running-config
+puts "\n--- Testing 'show running-config' command ---"
+send "show running-config\r"
+expect {
+    -re "Error|Invalid|Bad command" { puts "✗ Command failed" }
+    -re "(>|#)" { puts "✓ Command completed" }
+    timeout { puts "? Timeout" }
+}
+sleep 1
+
+# Exit
+send "exit\r"
+expect eof

@@ -1,0 +1,90 @@
+#!/usr/bin/expect -f
+# Test real CLI commands on SX3008F
+
+set timeout 10
+log_user 1
+
+puts "\n========== Connecting to SX3008F ==========\n"
+spawn telnet 10.1.10.48
+
+expect {
+    "User:" {
+        send "admin\r"
+    }
+    timeout {
+        puts "ERROR: No User prompt"
+        exit 1
+    }
+}
+
+expect {
+    "Password:" {
+        send "thunder123\r"
+    }
+    timeout {
+        puts "ERROR: No Password prompt"
+        exit 1
+    }
+}
+
+# Wait for initial prompt
+expect {
+    ">" {
+        puts "\n✓ Logged in successfully (user mode)\n"
+    }
+    timeout {
+        puts "ERROR: Login failed"
+        exit 1
+    }
+}
+
+# Test ? command in user mode
+puts "\n========== Testing ? in user mode ==========\n"
+send "?\r"
+expect ">"
+
+# Enter enable mode
+puts "\n========== Entering enable mode ==========\n"
+send "enable\r"
+sleep 2
+
+# Check which mode we're in
+send "\r"
+expect {
+    "#" {
+        puts "\n✓ Now in enable mode (#)\n"
+        set mode "enable"
+    }
+    ">" {
+        puts "\n⚠ Still in user mode (>)\n"
+        set mode "user"
+    }
+}
+
+# Test ? in current mode
+puts "\n========== Testing ? in current mode ==========\n"
+send "?\r"
+sleep 2
+expect -re ".*>"
+
+# Try show commands
+set show_commands [list \
+    "show" \
+    "show version" \
+    "show running-config" \
+    "show startup-config" \
+]
+
+foreach cmd $show_commands {
+    puts "\n========== Testing: $cmd ==========\n"
+    send "$cmd\r"
+    sleep 3
+    expect -re ".*>"
+}
+
+# Exit
+puts "\n========== Exiting ==========\n"
+send "exit\r"
+expect eof
+
+puts "\n========== Test Complete ==========\n"
