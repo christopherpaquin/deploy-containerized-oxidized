@@ -119,15 +119,17 @@ main() {
     [[ ${line} =~ ^[[:space:]]*# ]] && continue
 
     # Count colons to determine field count (more reliable than array length)
-    # Format: name:ip:model:group:username:password (5 colons = 6 fields)
+    # Format: name:ip:model:group (3 colons = 4 fields, global credentials)
+    #     OR: name:ip:model:group:username:password (5 colons = 6 fields, device-specific)
     colon_count=$(echo "${line}" | tr -cd ':' | wc -c)
 
-    # Must have exactly 5 colons (6 fields)
-    if [[ ${colon_count} -ne 5 ]]; then
-      log_error "Line ${TOTAL_LINES}: Invalid format (expected 5 colons, got ${colon_count})"
+    # Must have exactly 3 colons (4 fields) or 5 colons (6 fields)
+    if [[ ${colon_count} -ne 3 ]] && [[ ${colon_count} -ne 5 ]]; then
+      log_error "Line ${TOTAL_LINES}: Invalid format (expected 3 or 5 colons, got ${colon_count})"
       log_error "  Line: ${line}"
-      log_error "  Format: name:ip:model:group:username:password"
-      log_error "  Note: Username and password can be empty (use global credentials)"
+      log_error "  Format (global creds):  name:ip:model:group"
+      log_error "  Format (device creds):  name:ip:model:group:username:password"
+      log_error "  Note: Do NOT use :: for global credentials, omit fields entirely"
       continue
     fi
 

@@ -1,0 +1,16 @@
+[Unit]
+Description=Oxidized Log Tailer Service
+After=oxidized.service
+Requires=oxidized.service
+PartOf=oxidized.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/podman logs -f oxidized
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/lib/oxidized/data/oxidized.log
+StandardError=append:/var/lib/oxidized/data/oxidized.log
+
+[Install]
+WantedBy=multi-user.target

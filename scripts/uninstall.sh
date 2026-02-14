@@ -136,25 +136,41 @@ confirm_action() {
 
 # Stop and disable service
 stop_service() {
-  log_step "Stopping Oxidized service"
+  log_step "Stopping Oxidized services"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
-    log_info "[DRY-RUN] Would stop and disable oxidized.service"
+    log_info "[DRY-RUN] Would stop and disable oxidized.service and oxidized-logger.service"
     return
   fi
 
+  # Stop oxidized.service
   if systemctl is-active --quiet oxidized.service 2> /dev/null; then
-    systemctl stop oxidized.service
+    systemctl stop oxidized.service 2> /dev/null || log_warn "Failed to stop oxidized.service"
     log_success "Stopped oxidized.service"
   else
-    log_info "Service is not running"
+    log_info "oxidized.service is not running"
   fi
 
   if systemctl is-enabled --quiet oxidized.service 2> /dev/null; then
-    systemctl disable oxidized.service
+    systemctl disable oxidized.service 2> /dev/null || log_warn "Failed to disable oxidized.service"
     log_success "Disabled oxidized.service"
   else
-    log_info "Service is not enabled"
+    log_info "oxidized.service is not enabled"
+  fi
+
+  # Stop oxidized-logger.service
+  if systemctl is-active --quiet oxidized-logger.service 2> /dev/null; then
+    systemctl stop oxidized-logger.service 2> /dev/null || log_warn "Failed to stop oxidized-logger.service"
+    log_success "Stopped oxidized-logger.service"
+  else
+    log_info "oxidized-logger.service is not running"
+  fi
+
+  if systemctl is-enabled --quiet oxidized-logger.service 2> /dev/null; then
+    systemctl disable oxidized-logger.service 2> /dev/null || log_warn "Failed to disable oxidized-logger.service"
+    log_success "Disabled oxidized-logger.service"
+  else
+    log_info "oxidized-logger.service is not enabled"
   fi
 }
 
@@ -237,6 +253,42 @@ remove_logrotate() {
     fi
   else
     log_info "Logrotate file not found: ${logrotate_file}"
+  fi
+}
+
+# Remove log tailer service
+remove_log_tailer() {
+  log_step "Removing log tailer service"
+
+  local logger_service="/etc/systemd/system/oxidized-logger.service"
+  local logger_script="/usr/local/bin/oxidized-log-tailer.sh"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would remove logger service and script"
+    return
+  fi
+
+  # Remove systemd service file
+  if [[ -f "${logger_service}" ]]; then
+    rm -f "${logger_service}"
+    log_success "Removed: ${logger_service}"
+  else
+    log_info "Logger service file not found: ${logger_service}"
+  fi
+
+  # Remove log tailer script
+  if [[ -f "${logger_script}" ]]; then
+    rm -f "${logger_script}"
+    log_success "Removed: ${logger_script}"
+  else
+    log_info "Logger script not found: ${logger_script}"
+  fi
+
+  # Reload systemd and reset failed state
+  if [[ -f "${logger_service}" ]] || systemctl list-units --all | grep -q oxidized-logger; then
+    systemctl daemon-reload 2> /dev/null || true
+    systemctl reset-failed oxidized-logger.service 2> /dev/null || true
+    log_success "Reloaded systemd daemon"
   fi
 }
 
@@ -491,7 +543,7 @@ remove_data() {
     return
   fi
 
-  # Offer to backup router.db before deletion
+  # Offer to backup router.db before deletion (only if not using --force)
   local router_db="${OXIDIZED_ROOT}/config/router.db"
 
   if [[ -f "${router_db}" && "${FORCE}" == "false" ]]; then
@@ -523,12 +575,12 @@ remove_data() {
     backup_choice="${backup_choice:-Y}"
 
     if [[ "${backup_choice}" =~ ^[Yy]$ ]]; then
-      if cp "${router_db}" "${backup_path}"; then
+      if cp "${router_db}" "${backup_path}" 2> /dev/null; then
         # Set ownership to actual user (not root)
         if [[ "${actual_user}" != "root" ]]; then
           chown "${actual_user}:${actual_user}" "${backup_path}" 2> /dev/null || true
         fi
-        chmod 600 "${backup_path}"
+        chmod 600 "${backup_path}" 2> /dev/null || true
         log_success "Backed up router.db to: ${backup_path}"
         echo ""
       else
@@ -546,7 +598,7 @@ remove_data() {
     fi
   fi
 
-  # Final confirmation for data removal
+  # Final confirmation for data removal (only if not using --force)
   if [[ "${FORCE}" == "false" ]]; then
     echo ""
     log_error "FINAL WARNING: About to delete all Oxidized data!"
@@ -559,8 +611,13 @@ remove_data() {
     fi
   fi
 
-  rm -rf "${OXIDIZED_ROOT}"
-  log_success "Removed: ${OXIDIZED_ROOT}"
+  # Remove the directory
+  if rm -rf "${OXIDIZED_ROOT}" 2> /dev/null; then
+    log_success "Removed: ${OXIDIZED_ROOT}"
+  else
+    log_error "Failed to remove ${OXIDIZED_ROOT}"
+    log_error "You may need to remove it manually: sudo rm -rf ${OXIDIZED_ROOT}"
+  fi
 }
 
 # Remove Podman network
@@ -589,43 +646,47 @@ remove_user() {
     return
   fi
 
-  if [[ "${FORCE}" == "false" ]]; then
+  # With --remove-data and --force, remove user without prompting
+  # Otherwise, prompt for confirmation
+  local should_remove_user=false
+
+  if [[ "${PRESERVE_DATA}" == "false" && "${FORCE}" == "true" ]]; then
+    should_remove_user=true
+    log_info "Removing user ${OXIDIZED_USER} (--remove-data --force flags set)"
+  elif [[ "${FORCE}" == "true" ]]; then
+    should_remove_user=true
+    log_info "Removing user ${OXIDIZED_USER} (--force flag set)"
+  else
     read -rp "Remove system user ${OXIDIZED_USER}? (y/N): " remove_usr
-    if [[ ! "${remove_usr}" =~ ^[Yy]$ ]]; then
+    if [[ "${remove_usr}" =~ ^[Yy]$ ]]; then
+      should_remove_user=true
+    else
       log_info "User ${OXIDIZED_USER} preserved"
       return
     fi
   fi
 
-  # Remove user
-  if id "${OXIDIZED_USER}" > /dev/null 2>&1; then
-    userdel "${OXIDIZED_USER}" 2> /dev/null || log_warn "Failed to remove user (may still own files)"
-    log_success "Removed user: ${OXIDIZED_USER}"
-  else
-    log_info "User does not exist: ${OXIDIZED_USER}"
-  fi
-
-  # Remove group
-  if getent group "${OXIDIZED_GROUP}" > /dev/null 2>&1; then
-    groupdel "${OXIDIZED_GROUP}" 2> /dev/null || log_warn "Failed to remove group"
-    log_success "Removed group: ${OXIDIZED_GROUP}"
-  else
-    log_info "Group does not exist: ${OXIDIZED_GROUP}"
-  fi
-
-  # Remove home directory (always remove with --force)
-  if [[ -d "/home/${OXIDIZED_USER}" ]]; then
-    if [[ "${FORCE}" == "true" ]]; then
-      # Use ${var:?} to ensure OXIDIZED_USER is never empty
-      rm -rf "/home/${OXIDIZED_USER:?}"
+  if [[ "${should_remove_user}" == "true" ]]; then
+    # Remove home directory first (before removing user)
+    if [[ -d "/home/${OXIDIZED_USER}" ]]; then
+      rm -rf "/home/${OXIDIZED_USER:?}" 2> /dev/null || log_warn "Failed to remove /home/${OXIDIZED_USER}"
       log_success "Removed home directory: /home/${OXIDIZED_USER}"
+    fi
+
+    # Remove user
+    if id "${OXIDIZED_USER}" > /dev/null 2>&1; then
+      userdel "${OXIDIZED_USER}" 2> /dev/null || log_warn "Failed to remove user (may still own files)"
+      log_success "Removed user: ${OXIDIZED_USER}"
     else
-      log_warn "Home directory exists: /home/${OXIDIZED_USER}"
-      read -rp "Remove home directory? (y/N): " remove_home
-      if [[ "${remove_home}" =~ ^[Yy]$ ]]; then
-        rm -rf "/home/${OXIDIZED_USER:?}"
-        log_success "Removed home directory"
-      fi
+      log_info "User does not exist: ${OXIDIZED_USER}"
+    fi
+
+    # Remove group
+    if getent group "${OXIDIZED_GROUP}" > /dev/null 2>&1; then
+      groupdel "${OXIDIZED_GROUP}" 2> /dev/null || log_warn "Failed to remove group (may still be in use)"
+      log_success "Removed group: ${OXIDIZED_GROUP}"
+    else
+      log_info "Group does not exist: ${OXIDIZED_GROUP}"
     fi
   fi
 }
@@ -671,11 +732,12 @@ show_summary() {
 ${COLOR_GREEN}✅ Oxidized has been uninstalled${COLOR_RESET}
 
 ${COLOR_BLUE}What was removed:${COLOR_RESET}
-  ✓ Systemd service (oxidized.service)
+  ✓ Systemd services (oxidized.service, oxidized-logger.service)
   ✓ Podman container
   ✓ Podman network (${PODMAN_NETWORK})
   ✓ Quadlet configuration (${QUADLET_DIR}/oxidized.container)
   ✓ Logrotate configuration (${LOGROTATE_DIR}/oxidized)
+  ✓ Log tailer script (/usr/local/bin/oxidized-log-tailer.sh)
 
 EOF
 
@@ -773,6 +835,7 @@ main() {
   remove_network
   remove_quadlet
   remove_logrotate
+  remove_log_tailer
   remove_motd
   remove_documentation
   remove_helper_scripts

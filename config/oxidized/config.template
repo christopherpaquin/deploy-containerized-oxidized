@@ -80,8 +80,8 @@ output:
 #   Example with device credentials:
 #     switch01:10.1.1.1:ios:datacenter:admin:password123
 #
-#   Example with global credentials (empty username/password):
-#     switch02:10.1.1.2:ios:datacenter::
+#   Example with global credentials (OMIT username/password fields):
+#     switch02:10.1.1.2:ios:datacenter
 #
 # CREDENTIAL MODES:
 #   Mode A - Per-device: Specify username/password in each line (fields 4 & 5)

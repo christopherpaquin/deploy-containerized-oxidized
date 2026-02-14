@@ -15,7 +15,13 @@ readonly COLOR_RESET=$'\033[0m'
 # Configuration
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly ENV_FILE="${REPO_ROOT}/.env"
+
+# Look for .env in deployed location first, then fall back to repo
+if [[ -f "/var/lib/oxidized/.env" ]]; then
+  readonly ENV_FILE="/var/lib/oxidized/.env"
+else
+  readonly ENV_FILE="${REPO_ROOT}/.env"
+fi
 
 # Service name
 readonly SERVICE_NAME="oxidized.service"

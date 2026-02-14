@@ -9,7 +9,7 @@
 Production-grade deployment framework for running [Oxidized](https://github.com/yggdrasil-network/oxidized)
 as a containerized service on RHEL 10/9 using **Podman Quadlets** and **systemd**.
 
-**For Oxidized usage and configuration**, see [README-OXIDIZED.md](README-OXIDIZED.md).
+**For Oxidized usage and configuration**, see [docs/README-OXIDIZED.md](docs/README-OXIDIZED.md).
 
 ---
 
@@ -40,7 +40,7 @@ This repository provides automated deployment scripts and configuration template
 Oxidized is a network device configuration backup tool that automatically backs up network device
 configurations, tracks changes using Git, and supports 130+ device models.
 
-**Full Oxidized documentation**: [README-OXIDIZED.md](README-OXIDIZED.md)
+**Full Oxidized documentation**: [docs/README-OXIDIZED.md](docs/README-OXIDIZED.md)
 
 ### Why This Repository?
 
@@ -70,7 +70,7 @@ configurations, tracks changes using Git, and supports 130+ device models.
 - **Git versioning**: Every config change tracked automatically
 - **CSV inventory**: Simple, colon-delimited device list (`router.db`)
 - **Log rotation**: Automated via logrotate
-- **Backup procedures**: Scripts and documentation provided
+- **Backup procedures**: Local git + optional remote repository (GitHub/GitLab)
 
 ### 🔍 Monitoring & Management
 
@@ -228,20 +228,19 @@ sudo ./scripts/health-check.sh
 **Post-deployment**:
 
 ```bash
+# Add devices interactively (recommended)
+sudo /var/lib/oxidized/scripts/add-device.sh
 
-# Create device inventory
-
+# OR manually edit device inventory
 sudo cp inventory/router.db.template /var/lib/oxidized/config/router.db
 sudo vim /var/lib/oxidized/config/router.db
 sudo chown 30000:30000 /var/lib/oxidized/config/router.db
 sudo chmod 644 /var/lib/oxidized/config/router.db
 
-# Restart to load inventory
-
-sudo systemctl restart oxidized.service
+# Reload devices (no restart needed)
+curl -X GET http://127.0.0.1:8889/reload
 
 # Check status
-
 sudo systemctl status oxidized.service
 ```
 
@@ -258,7 +257,7 @@ sudo systemctl status oxidized.service
 > 1. ✅ Leave it during initial deployment/testing
 > 2. ❌ **Remove or replace it** before production use with your real devices
 >
-> See [DEVICE-MANAGEMENT.md](/var/lib/oxidized/docs/DEVICE-MANAGEMENT.md) for adding real devices.
+> See [docs/DEVICE-MANAGEMENT.md](docs/DEVICE-MANAGEMENT.md) for adding real devices.
 
 **Access Web UI**: `http://<your-server-ip>:8888`
 
@@ -344,15 +343,17 @@ sudo ./scripts/deploy.sh
 
 This script:
 
-1. Creates system user (`oxidized`, UID 2000)
-2. Creates directory structure under `/var/lib/oxidized`
-3. Generates Oxidized config from templates
-4. Installs Podman Quadlet service
-5. Sets up logrotate
-6. Pulls container image
-7. Starts service
+1. Creates system user (`oxidized`, UID 30000)
+2. Migrates existing users from old UID 2000 to 30000 (automatic)
+3. Creates directory structure under `/var/lib/oxidized`
+4. Generates Oxidized config from templates
+5. Installs Podman Quadlet service
+6. Sets up logrotate and log tailer
+7. Installs helper scripts
+8. Pulls container image
+9. Starts services (oxidized + logger)
 
-**The deployment is idempotent** - safe to re-run.
+**The deployment is idempotent** - safe to re-run for upgrades.
 
 #### 6. Create Device Inventory
 
@@ -378,7 +379,7 @@ sudo systemctl restart oxidized.service
 
 **Format**: `name:ip:model:group:username:password`
 
-See [README-OXIDIZED.md - Device Inventory](README-OXIDIZED.md#-device-inventory-routerdb) for complete documentation.
+See [docs/README-OXIDIZED.md - Device Inventory](docs/README-OXIDIZED.md#-device-inventory-routerdb) for complete documentation.
 
 #### 7. Verify Deployment
 
@@ -415,11 +416,11 @@ sudo journalctl -u oxidized.service -f
 
 ```bash
 
-# System user (runs container)
+# System user (matches container UID)
 
 OXIDIZED_USER="oxidized"
-OXIDIZED_UID=2000
-OXIDIZED_GID=2000
+OXIDIZED_UID=30000  # Matches container's internal oxidized user
+OXIDIZED_GID=30000
 
 # Data directory (all persistent data)
 
@@ -492,6 +493,10 @@ edge-switch01:10.1.2.1:procurve:distribution:admin:password123
 ## 🛠️ Management Scripts
 
 This repository includes automated scripts for common operations:
+
+### Overview
+
+All scripts are deployed to `/var/lib/oxidized/scripts/` for easy access after deployment.
 
 ### Deployment Script
 
@@ -635,6 +640,8 @@ sudo ./scripts/health-check.sh
 sudo /var/lib/oxidized/scripts/add-device.sh
 ```
 
+**NEW**: Backups are automatically organized in `/var/lib/oxidized/config/backup-routerdb/`
+
 **Features**:
 
 - Interactive prompts with validation for hostname, IP, model, and group
@@ -644,7 +651,7 @@ sudo /var/lib/oxidized/scripts/add-device.sh
 - Optional per-device credential override
 - Comprehensive spell checking with 50+ typo patterns
 - Intelligent suggestions for common mistakes (tp-link → tplink, arista → eos)
-- Automatic timestamped backups in `/var/lib/oxidized/config/backup/`
+- Automatic timestamped backups in `/var/lib/oxidized/config/backup-routerdb/`
 - Full syntax validation after addition
 - Append-only operation (never overwrites router.db)
 
@@ -742,6 +749,29 @@ sudo /var/lib/oxidized/scripts/add-device.sh
 ```bash
 /var/lib/oxidized/scripts/test-device.sh core-router01
 ```
+
+### Remote Repository Setup Script
+
+**Path**: `scripts/setup-remote-repo.sh`
+
+**Purpose**: Configure remote git repository (GitHub/GitLab) for backup redundancy
+
+**Usage**:
+```bash
+sudo /var/lib/oxidized/scripts/setup-remote-repo.sh
+```
+
+**Features**:
+
+- Interactive SSH key generation
+- GitHub/GitLab integration instructions
+- Automatic push configuration (optional timer)
+- Connection testing before setup
+- Multi-remote support
+
+**Documentation**:
+- Quick Start: [docs/QUICK_START_REMOTE_REPO.md](docs/QUICK_START_REMOTE_REPO.md)
+- Full Guide: [docs/REMOTE_REPOSITORY.md](docs/REMOTE_REPOSITORY.md)
 
 ### Uninstall Script
 
@@ -872,7 +902,7 @@ This deployment includes multiple security hardening measures:
 - NoNewPrivileges flag
 - Dedicated bridge network
 
-For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md).
+For detailed security analysis and trade-offs, see [docs/DEPLOYMENT-NOTES.md](docs/DEPLOYMENT-NOTES.md).
 
 ### Security Best Practices
 
@@ -890,7 +920,7 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
    sudo -u oxidized ssh-copy-id -i /var/lib/oxidized/ssh/id_ed25519.pub admin@device
    ```
 
-   📖 **For detailed SSH key setup**, see [SSH Key Authentication](README-OXIDIZED.md#ssh-key-authentication-recommended) in README-OXIDIZED.md
+   📖 **For detailed SSH key setup**, see [SSH Key Authentication](docs/README-OXIDIZED.md#ssh-key-authentication-recommended) in docs/README-OXIDIZED.md
 
 3. **Secure the `.env` file**:
 
@@ -940,26 +970,52 @@ For detailed security analysis and trade-offs, see [DEPLOYMENT-NOTES.md](DEPLOYM
 
 ### Repository Documentation
 
-> **📖 Not sure which doc to read?** See **[DOCUMENTATION-GUIDE.md](DOCUMENTATION-GUIDE.md)** for a complete guide to our documentation structure.
+> **📖 Not sure which doc to read?** See **[docs/DOCUMENTATION-GUIDE.md](docs/DOCUMENTATION-GUIDE.md)** for a complete guide to our documentation structure.
 
-- **[QUICK-START.md](QUICK-START.md)** - ⚡ Quick reference guide for deployment and common tasks
-- **[DEVICE-MANAGEMENT.md](DEVICE-MANAGEMENT.md)** - 📱 Complete device management, groups, logging, and validation
-- **[DIRECTORY-STRUCTURE.md](DIRECTORY-STRUCTURE.md)** - 📁 Directory layout and file locations explained
-- **[CREDENTIALS-GUIDE.md](CREDENTIALS-GUIDE.md)** - 🔑 **IMPORTANT:** Understanding the TWO sets of credentials
-- **[DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md)** - ⭐ Deployment improvements, testing notes, and troubleshooting
-- **[AUTHENTICATION-SETUP.md](AUTHENTICATION-SETUP.md)** - 🔒 Web UI login configuration and management
-- **[SECURITY-AUTHENTICATION.md](SECURITY-AUTHENTICATION.md)** - ⚠️ Security options and considerations
-- **[FIREWALL-IMPLEMENTATION.md](FIREWALL-IMPLEMENTATION.md)** - Automatic firewall configuration details
-- **[README-OXIDIZED.md](README-OXIDIZED.md)** - Oxidized usage, configuration, and troubleshooting
+#### Getting Started
+- **[docs/QUICK-START.md](docs/QUICK-START.md)** - ⚡ Quick reference guide for deployment and common tasks
 - **[docs/INSTALL.md](docs/INSTALL.md)** - Detailed installation guide
+- **[docs/PREREQUISITES.md](docs/PREREQUISITES.md)** - System requirements and dependencies
+- **[docs/README-OXIDIZED.md](docs/README-OXIDIZED.md)** - Oxidized usage and configuration
+
+#### Configuration & Management
 - **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** - Configuration deep-dive
 - **[docs/ENV-ARCHITECTURE.md](docs/ENV-ARCHITECTURE.md)** - Environment variable architecture
+- **[docs/DEVICE-MANAGEMENT.md](docs/DEVICE-MANAGEMENT.md)** - 📱 Complete device management guide
+- **[docs/ADD-DEVICE.md](docs/ADD-DEVICE.md)** - Interactive device addition guide
+- **[docs/DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)** - 📁 Directory layout explained
+- **[docs/SERVICE-MANAGEMENT.md](docs/SERVICE-MANAGEMENT.md)** - Service operations guide
+
+#### Security & Authentication
+- **[docs/CREDENTIALS-GUIDE.md](docs/CREDENTIALS-GUIDE.md)** - 🔑 **IMPORTANT:** Understanding credentials
 - **[docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md)** - Security best practices
+- **[docs/SECURITY-AUTHENTICATION.md](docs/SECURITY-AUTHENTICATION.md)** - Authentication options
+- **[docs/AUTHENTICATION-SETUP.md](docs/AUTHENTICATION-SETUP.md)** - Web UI login setup
+- **[docs/FIREWALL-IMPLEMENTATION.md](docs/FIREWALL-IMPLEMENTATION.md)** - Firewall configuration
+
+#### Remote Backups (NEW)
+- **[docs/QUICK_START_REMOTE_REPO.md](docs/QUICK_START_REMOTE_REPO.md)** - ⭐ Remote repository quick start
+- **[docs/REMOTE_REPOSITORY.md](docs/REMOTE_REPOSITORY.md)** - Complete remote repo guide
+- **[docs/UID_MIGRATION_30000.md](docs/UID_MIGRATION_30000.md)** - UID migration documentation
+
+#### Operations & Troubleshooting
+- **[docs/DEPLOYMENT-NOTES.md](docs/DEPLOYMENT-NOTES.md)** - Deployment improvements and notes
+- **[docs/TROUBLESHOOTING-WEB-UI.md](docs/TROUBLESHOOTING-WEB-UI.md)** - Web UI troubleshooting
 - **[docs/UPGRADE.md](docs/UPGRADE.md)** - Upgrade procedures
-- **[docs/PREREQUISITES.md](docs/PREREQUISITES.md)** - Prerequisite details
-- **[docs/DECISIONS.md](docs/DECISIONS.md)** - Architecture decisions
-- **[docs/TROUBLESHOOTING-WEB-UI.md](docs/TROUBLESHOOTING-WEB-UI.md)** - Web UI / Backend Not Responding troubleshooting
+- **[docs/GIT-REPOSITORY-STRUCTURE.md](docs/GIT-REPOSITORY-STRUCTURE.md)** - Git repo structure
+- **[docs/PATH-MAPPINGS.md](docs/PATH-MAPPINGS.md)** - Container path mappings
+
+#### Advanced Topics
+- **[docs/CUSTOM-MODELS.md](docs/CUSTOM-MODELS.md)** - Custom device models
+- **[docs/TP-LINK-SX3008F.md](docs/TP-LINK-SX3008F.md)** - TP-Link switch support
+- **[docs/TELNET-CONFIGURATION.md](docs/TELNET-CONFIGURATION.md)** - Telnet setup
+- **[docs/DEVICE-INPUT-CONFIGURATION.md](docs/DEVICE-INPUT-CONFIGURATION.md)** - Input methods
 - **[docs/monitoring/ZABBIX.md](docs/monitoring/ZABBIX.md)** - Zabbix monitoring setup
+
+#### Project Documentation
+- **[docs/DECISIONS.md](docs/DECISIONS.md)** - Architecture decisions
+- **[docs/DOCUMENTATION-GUIDE.md](docs/DOCUMENTATION-GUIDE.md)** - Documentation structure
+- **[docs/DOCUMENTATION-CONSOLIDATION.md](docs/DOCUMENTATION-CONSOLIDATION.md)** - Doc organization
 
 ### Templates
 
@@ -1048,8 +1104,9 @@ Full license text: [LICENSE](LICENSE)
 
 **Quick Links**:
 
-- [Oxidized Usage Guide](README-OXIDIZED.md)
-- [Device Inventory Setup](README-OXIDIZED.md#-device-inventory-routerdb)
-- [Service Management](README-OXIDIZED.md#-service-management)
-- [Troubleshooting](README-OXIDIZED.md#-troubleshooting)
+- [Oxidized Usage Guide](docs/README-OXIDIZED.md)
+- [Quick Start Guide](docs/QUICK-START.md)
+- [Device Management](docs/DEVICE-MANAGEMENT.md)
+- [Remote Repository Setup](docs/QUICK_START_REMOTE_REPO.md)
+- [Troubleshooting](docs/TROUBLESHOOTING-WEB-UI.md)
 - [Security Hardening](docs/SECURITY-HARDENING.md)

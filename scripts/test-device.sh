@@ -180,10 +180,12 @@ main() {
     # Test actual SSH authentication
     # Determine credentials to use (device-specific or global)
     local test_username="${device_username}"
+    local test_password="${device_password}"
     local cred_source="device-specific credentials"
 
     if [[ -z "${test_username}" ]]; then
       test_username=$(get_global_credentials "${OXIDIZED_CONFIG}" "username")
+      test_password=$(get_global_credentials "${OXIDIZED_CONFIG}" "password")
       cred_source="global credentials from config file"
     fi
 
@@ -193,13 +195,34 @@ main() {
 
       # Try SSH connection with timeout
       local ssh_test_output
-      ssh_test_output=$(timeout 10 ssh -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -o ConnectTimeout=5 \
-        -o BatchMode=yes \
-        "${test_username}@${device_ip}" "echo SSH_OK" 2>&1 || true)
 
-      if echo "${ssh_test_output}" | grep -q "SSH_OK"; then
+      # Use password authentication if password is provided, otherwise try key auth
+      if [[ -n "${test_password}" ]]; then
+        if command -v sshpass &> /dev/null; then
+          log_info "Using password authentication"
+          ssh_test_output=$(timeout 10 sshpass -p "${test_password}" ssh -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=5 \
+            -o PubkeyAuthentication=no \
+            -o PreferredAuthentications=password \
+            "${test_username}@${device_ip}" "echo SSH_OK" 2>&1 || true)
+        else
+          log_warn "sshpass not installed - cannot test password authentication"
+          log_info "Install sshpass: dnf install -y sshpass"
+          ssh_test_output=""
+        fi
+      else
+        log_info "Using SSH key authentication"
+        ssh_test_output=$(timeout 10 ssh -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          -o ConnectTimeout=5 \
+          -o BatchMode=yes \
+          "${test_username}@${device_ip}" "echo SSH_OK" 2>&1 || true)
+      fi
+
+      if [[ -z "${ssh_test_output}" ]]; then
+        log_warn "SSH test skipped (sshpass required for password authentication)"
+      elif echo "${ssh_test_output}" | grep -q "SSH_OK"; then
         log_success "SSH authentication successful"
       elif echo "${ssh_test_output}" | grep -qi "no matching.*cipher\|no matching.*key exchange\|no matching.*host key\|no matching.*mac"; then
         log_warn "SSH cipher/algorithm mismatch detected"
@@ -212,7 +235,12 @@ main() {
         log_info "✓ Telnet may be available as alternative for manual access"
       elif echo "${ssh_test_output}" | grep -qi "permission denied\|authentication.*fail"; then
         log_error "SSH authentication failed"
-        log_error "Check username/password in router.db or config file"
+        if [[ -n "${test_password}" ]]; then
+          log_error "Password authentication rejected - check credentials in router.db"
+          log_info "Device entry: ${DEVICE_NAME}:${device_ip}:${device_model}:${device_group}:${test_username}:***"
+        else
+          log_error "Key authentication failed - check SSH keys in /var/lib/oxidized/ssh/"
+        fi
       elif echo "${ssh_test_output}" | grep -qi "connection.*refused\|connection.*closed"; then
         log_error "SSH connection refused by device"
       elif echo "${ssh_test_output}" | grep -qi "timeout\|timed out"; then
@@ -231,13 +259,65 @@ main() {
     log_error "Check firewall rules and device configuration"
   fi
 
-  # Step 5b: Test Telnet availability
+  # Step 5b: Test Telnet availability and authentication
   echo ""
   log_step "Testing Telnet connectivity on port 23"
   if timeout 3 bash -c "echo > /dev/tcp/${device_ip}/23" 2> /dev/null; then
     log_success "Telnet port (23) is open"
-    log_info "Telnet is available as fallback for legacy SSH issues"
-    log_info "Configure in router.db: ${DEVICE_NAME}:${device_ip}:${device_model}:${device_group}:${device_username}:${device_password}:telnet"
+
+    # Test telnet authentication if credentials are available
+    if [[ -n "${test_username}" ]] && [[ -n "${test_password}" ]]; then
+      echo ""
+      log_info "Testing Telnet login as '${test_username}' (using ${cred_source})"
+
+      if command -v expect &> /dev/null; then
+        local telnet_result
+        telnet_result=$(expect -c "
+          set timeout 10
+          log_user 0
+          spawn telnet ${device_ip}
+          expect {
+            timeout { puts \"TIMEOUT\"; exit 1 }
+            eof { puts \"CONNECTION_CLOSED\"; exit 1 }
+            \"ogin:\" { send \"${test_username}\r\" }
+            \"sername:\" { send \"${test_username}\r\" }
+          }
+          expect {
+            timeout { puts \"TIMEOUT_PASSWORD\"; exit 1 }
+            eof { puts \"CONNECTION_CLOSED\"; exit 1 }
+            \"assword:\" { send \"${test_password}\r\" }
+          }
+          expect {
+            timeout { puts \"TIMEOUT_PROMPT\"; exit 1 }
+            eof { puts \"AUTH_FAILED\"; exit 1 }
+            \"#\" { puts \"TELNET_OK\"; exit 0 }
+            \">\" { puts \"TELNET_OK\"; exit 0 }
+            \"denied\" { puts \"AUTH_FAILED\"; exit 1 }
+            \"incorrect\" { puts \"AUTH_FAILED\"; exit 1 }
+          }
+        " 2>&1)
+
+        if echo "${telnet_result}" | grep -q "TELNET_OK"; then
+          log_success "Telnet authentication successful"
+          log_info "Device responds to telnet - Oxidized can use this as transport"
+        elif echo "${telnet_result}" | grep -q "AUTH_FAILED"; then
+          log_error "Telnet authentication failed"
+          log_error "Check username/password - credentials may be incorrect"
+        elif echo "${telnet_result}" | grep -q "TIMEOUT"; then
+          log_warn "Telnet connection timeout"
+          log_warn "Device may be slow or using non-standard prompts"
+        else
+          log_warn "Telnet test inconclusive"
+          log_info "Telnet is available - configure in router.db with :telnet suffix"
+        fi
+      else
+        log_warn "expect not installed - cannot test telnet authentication"
+        log_info "Install expect: dnf install -y expect"
+      fi
+    else
+      log_info "Telnet is available as fallback for legacy SSH issues"
+      log_info "Configure in router.db: ${DEVICE_NAME}:${device_ip}:${device_model}:${device_group}:${test_username}:${test_password}:telnet"
+    fi
   else
     log_info "Telnet port (23) is not open (this is normal for secure configurations)"
   fi

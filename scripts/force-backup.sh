@@ -14,7 +14,13 @@ readonly COLOR_RESET=$'\033[0m'
 # Configuration
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-readonly ENV_FILE="${REPO_ROOT}/.env"
+
+# Look for .env in deployed location first, then fall back to repo
+if [[ -f "/var/lib/oxidized/.env" ]]; then
+  readonly ENV_FILE="/var/lib/oxidized/.env"
+else
+  readonly ENV_FILE="${REPO_ROOT}/.env"
+fi
 
 # API endpoint (internal, behind nginx)
 readonly API_HOST="localhost"
@@ -135,8 +141,8 @@ list_devices() {
       .ip,
       .model,
       .group,
-      (.status.status // "unknown"),
-      (.last.end // "never" | if . == "never" then . else (. | tonumber | strftime("%Y-%m-%d %H:%M")) end)
+      (.status // "unknown"),
+      (.last.end // "never")
     ]) | @tsv
   ' | column -t -s $'\t'
 
@@ -173,10 +179,10 @@ device_status() {
     "IP:             \(.ip)",
     "Model:          \(.model)",
     "Group:          \(.group)",
-    "Status:         \(.status.status // "unknown")",
-    "Last Updated:   \(if .last.end then (.last.end | tonumber | strftime("%Y-%m-%d %H:%M:%S")) else "never" end)",
     "Last Status:    \(.last.status // "unknown")",
-    "Git SHA:        \(.git // "none")"
+    "Last Updated:   \(.last.end // "never")",
+    "Last Duration:  \(if .last.time then (.last.time | tostring + "s") else "n/a" end)",
+    "Full Name:      \(.full_name // "n/a")"
   '
 
   echo ""
@@ -192,8 +198,8 @@ backup_device() {
   local response
   local http_code
 
-  # Make API request
-  response=$(curl -s -w "\n%{http_code}" "${API_URL}/node/fetch/${device_name}" 2>&1)
+  # Make API request (use /node/next/DEVICE.json endpoint)
+  response=$(curl -s -w "\n%{http_code}" "${API_URL}/node/next/${device_name}.json" 2>&1)
   http_code=$(echo "${response}" | tail -n1)
   response=$(echo "${response}" | sed '$d')
 
@@ -242,8 +248,8 @@ backup_all() {
   local response
   local http_code
 
-  # Reload all nodes
-  response=$(curl -s -w "\n%{http_code}" -X POST "${API_URL}/reload.json" 2>&1)
+  # Reload all nodes (use /reload endpoint without .json)
+  response=$(curl -s -w "\n%{http_code}" "${API_URL}/reload" 2>&1)
   http_code=$(echo "${response}" | tail -n1)
   response=$(echo "${response}" | sed '$d')
 

@@ -251,6 +251,61 @@ check_prerequisites() {
 }
 
 # Create oxidized user and group
+# Migrate existing oxidized user from old UID to new UID
+migrate_user_uid() {
+  local old_uid="$1"
+  local new_uid="$2"
+  local old_gid="$3"
+  local new_gid="$4"
+
+  log_step "Migrating oxidized user from UID ${old_uid} to ${new_uid}"
+
+  # Stop oxidized service if running
+  if systemctl is-active --quiet oxidized.service 2> /dev/null; then
+    log_info "Stopping oxidized service for migration..."
+    systemctl stop oxidized.service
+    systemctl stop oxidized-logger.service 2> /dev/null || true
+  fi
+
+  # Modify user UID/GID
+  log_info "Updating user ${OXIDIZED_USER}: UID ${old_uid} → ${new_uid}, GID ${old_gid} → ${new_gid}"
+  usermod -u "${new_uid}" "${OXIDIZED_USER}" 2> /dev/null || true
+  groupmod -g "${new_gid}" "${OXIDIZED_GROUP}" 2> /dev/null || true
+
+  # Update home directory if needed
+  local current_home
+  current_home=$(getent passwd "${OXIDIZED_USER}" | cut -d: -f6)
+  if [[ "${current_home}" != "${OXIDIZED_HOME}" ]]; then
+    log_info "Changing home directory: ${current_home} → ${OXIDIZED_HOME}"
+    usermod -d "${OXIDIZED_HOME}" "${OXIDIZED_USER}"
+
+    # Move SSH keys if they exist in old home
+    if [[ -d "${current_home}/.ssh" ]] && [[ "${current_home}" != "${OXIDIZED_HOME}" ]]; then
+      log_info "Migrating SSH keys from ${current_home}/.ssh to ${OXIDIZED_HOME}/.ssh"
+      mkdir -p "${OXIDIZED_HOME}/.ssh"
+      cp -a "${current_home}/.ssh/"* "${OXIDIZED_HOME}/.ssh/" 2> /dev/null || true
+      chown -R "${new_uid}:${new_gid}" "${OXIDIZED_HOME}/.ssh"
+      chmod 700 "${OXIDIZED_HOME}/.ssh"
+      chmod 600 "${OXIDIZED_HOME}/.ssh/id_"* 2> /dev/null || true
+      chmod 644 "${OXIDIZED_HOME}/.ssh/id_"*.pub 2> /dev/null || true
+      log_success "SSH keys migrated to ${OXIDIZED_HOME}/.ssh"
+    fi
+  fi
+
+  # Update file ownership across the entire oxidized directory tree
+  log_info "Updating file ownership for all oxidized files..."
+  log_info "This may take a moment..."
+
+  # Find and update all files owned by old UID
+  if [[ -d "${OXIDIZED_ROOT}" ]]; then
+    find "${OXIDIZED_ROOT}" -user "${old_uid}" -exec chown "${new_uid}:${new_gid}" {} + 2> /dev/null || true
+    find "${OXIDIZED_ROOT}" -group "${old_gid}" -exec chown ":${new_gid}" {} + 2> /dev/null || true
+  fi
+
+  log_success "Migration complete: oxidized user now has UID ${new_uid} / GID ${new_gid}"
+  log_success "All files updated to new ownership"
+}
+
 create_user() {
   log_step "Creating oxidized user and group"
 
@@ -259,37 +314,81 @@ create_user() {
     return
   fi
 
-  # Check if group exists
-  if getent group "${OXIDIZED_GROUP}" > /dev/null 2>&1; then
+  # Check if user exists and needs migration
+  if id "${OXIDIZED_USER}" > /dev/null 2>&1; then
+    local existing_uid
+    local existing_gid
+    local existing_home
+    existing_uid=$(id -u "${OXIDIZED_USER}")
+    existing_gid=$(id -g "${OXIDIZED_USER}")
+    existing_home=$(getent passwd "${OXIDIZED_USER}" | cut -d: -f6)
+
+    # Migration: Old UID was 2000, new UID is 30000
+    if [[ "${existing_uid}" == "2000" ]] && [[ "${OXIDIZED_UID}" == "30000" ]]; then
+      log_warn "Found oxidized user with old UID 2000"
+      log_warn "Migrating to new UID 30000 to match container UID"
+      migrate_user_uid "2000" "30000" "2000" "30000"
+      return 0
+    fi
+
+    # Check if UID/GID match expected values
+    if [[ "${existing_uid}" != "${OXIDIZED_UID}" ]]; then
+      log_error "User ${OXIDIZED_USER} exists with UID ${existing_uid} (expected: ${OXIDIZED_UID})"
+      log_error "Manual intervention required"
+      exit ${EXIT_GENERAL_FAILURE}
+    fi
+
+    if [[ "${existing_gid}" != "${OXIDIZED_GID}" ]]; then
+      log_error "User ${OXIDIZED_USER} has GID ${existing_gid} (expected: ${OXIDIZED_GID})"
+      log_error "Manual intervention required"
+      exit ${EXIT_GENERAL_FAILURE}
+    fi
+
+    log_info "User ${OXIDIZED_USER} already exists with correct UID ${OXIDIZED_UID}"
+
+    # Check if home directory needs updating
+    if [[ "${existing_home}" != "${OXIDIZED_HOME}" ]]; then
+      log_warn "Home directory mismatch: ${existing_home} → ${OXIDIZED_HOME}"
+      log_info "Updating home directory..."
+      usermod -d "${OXIDIZED_HOME}" "${OXIDIZED_USER}"
+
+      # Move SSH keys if they exist in old home
+      if [[ -d "${existing_home}/.ssh" ]] && [[ "${existing_home}" != "${OXIDIZED_HOME}" ]]; then
+        log_info "Migrating SSH keys from ${existing_home}/.ssh"
+        mkdir -p "${OXIDIZED_HOME}/.ssh"
+        cp -a "${existing_home}/.ssh/"* "${OXIDIZED_HOME}/.ssh/" 2> /dev/null || true
+        chown -R "${OXIDIZED_UID}:${OXIDIZED_GID}" "${OXIDIZED_HOME}/.ssh"
+        chmod 700 "${OXIDIZED_HOME}/.ssh"
+        chmod 600 "${OXIDIZED_HOME}/.ssh/id_"* 2> /dev/null || true
+        chmod 644 "${OXIDIZED_HOME}/.ssh/id_"*.pub 2> /dev/null || true
+        log_success "SSH keys migrated to ${OXIDIZED_HOME}/.ssh"
+      fi
+
+      log_success "Home directory updated to ${OXIDIZED_HOME}"
+    fi
+
+    return 0
+  fi
+
+  # Create group if it doesn't exist
+  if ! getent group "${OXIDIZED_GROUP}" > /dev/null 2>&1; then
+    groupadd -g "${OXIDIZED_GID}" "${OXIDIZED_GROUP}"
+    log_success "Created group: ${OXIDIZED_GROUP} (GID: ${OXIDIZED_GID})"
+  else
     local existing_gid
     existing_gid=$(getent group "${OXIDIZED_GROUP}" | cut -d: -f3)
     if [[ "${existing_gid}" != "${OXIDIZED_GID}" ]]; then
-      log_warn "Group ${OXIDIZED_GROUP} exists but has GID ${existing_gid}, expected ${OXIDIZED_GID}"
-      log_warn "Continuing anyway, but you may need to fix ownership manually"
-    else
-      log_info "Group ${OXIDIZED_GROUP} already exists with correct GID ${OXIDIZED_GID}"
+      log_error "Group ${OXIDIZED_GROUP} exists with different GID: ${existing_gid} (expected: ${OXIDIZED_GID})"
+      exit ${EXIT_GENERAL_FAILURE}
     fi
-  else
-    groupadd -g "${OXIDIZED_GID}" "${OXIDIZED_GROUP}"
-    log_success "Created group: ${OXIDIZED_GROUP} (GID: ${OXIDIZED_GID})"
+    log_info "Group ${OXIDIZED_GROUP} already exists with correct GID ${OXIDIZED_GID}"
   fi
 
-  # Check if user exists
-  if id "${OXIDIZED_USER}" > /dev/null 2>&1; then
-    local existing_uid
-    existing_uid=$(id -u "${OXIDIZED_USER}")
-    if [[ "${existing_uid}" != "${OXIDIZED_UID}" ]]; then
-      log_warn "User ${OXIDIZED_USER} exists but has UID ${existing_uid}, expected ${OXIDIZED_UID}"
-      log_warn "Continuing anyway, but you may need to fix ownership manually"
-    else
-      log_info "User ${OXIDIZED_USER} already exists with correct UID ${OXIDIZED_UID}"
-    fi
-  else
-    useradd -u "${OXIDIZED_UID}" -g "${OXIDIZED_GID}" \
-      -d "${OXIDIZED_HOME}" -s /usr/sbin/nologin \
-      -c "Oxidized Network Backup Service" "${OXIDIZED_USER}"
-    log_success "Created user: ${OXIDIZED_USER} (UID: ${OXIDIZED_UID})"
-  fi
+  # Create user
+  useradd -u "${OXIDIZED_UID}" -g "${OXIDIZED_GID}" \
+    -d "${OXIDIZED_HOME}" -s /usr/sbin/nologin \
+    -c "Oxidized Network Backup Service" "${OXIDIZED_USER}"
+  log_success "Created user: ${OXIDIZED_USER} (UID: ${OXIDIZED_UID})"
 }
 
 # Create directory structure
@@ -327,6 +426,20 @@ create_directories() {
     # Set directory permissions (755 = rwxr-xr-x)
     find "${OXIDIZED_ROOT}" -type d -exec chmod 755 {} \;
     log_success "Set directory permissions: 755"
+
+    # Create symlink from .ssh to ssh directory (for SSH client to find keys)
+    # Host: /var/lib/oxidized/.ssh -> /var/lib/oxidized/ssh
+    # Container mount: /var/lib/oxidized/ssh -> /home/oxidized/.ssh (inside container)
+    if [[ ! -L "${OXIDIZED_ROOT}/.ssh" ]]; then
+      if [[ -d "${OXIDIZED_ROOT}/.ssh" ]] && [[ ! -L "${OXIDIZED_ROOT}/.ssh" ]]; then
+        # If .ssh exists as a directory, move contents to ssh/ first
+        log_info "Moving existing .ssh directory contents to ssh/"
+        cp -a "${OXIDIZED_ROOT}/.ssh/"* "${OXIDIZED_ROOT}/ssh/" 2> /dev/null || true
+        rm -rf "${OXIDIZED_ROOT}/.ssh"
+      fi
+      ln -sf "${OXIDIZED_ROOT}/ssh" "${OXIDIZED_ROOT}/.ssh"
+      log_success "Created symlink: ${OXIDIZED_ROOT}/.ssh -> ${OXIDIZED_ROOT}/ssh"
+    fi
 
     # Set file permissions (644 = rw-r--r--)
     find "${OXIDIZED_ROOT}" -type f -exec chmod 644 {} \;
@@ -373,12 +486,18 @@ deploy_config() {
 
   if [[ -f "${dst_config}" ]]; then
     log_warn "Config already exists: ${dst_config}"
-    log_warn "Backing up to ${dst_config}.backup"
     if [[ "${DRY_RUN}" == "false" ]]; then
+      # Create backup directory if it doesn't exist
+      local backup_dir="${OXIDIZED_ROOT}/config/backup-config-file"
+      mkdir -p "${backup_dir}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${backup_dir}"
+      chmod 755 "${backup_dir}"
+
       local backup_file
-      backup_file="${dst_config}.backup.$(date +%Y%m%d_%H%M%S)"
+      backup_file="${backup_dir}/config.backup.$(date +%Y%m%d_%H%M%S)"
       cp "${dst_config}" "${backup_file}"
       chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${backup_file}"
+      log_warn "Backed up to: ${backup_file}"
     fi
   fi
 
@@ -415,11 +534,17 @@ deploy_config() {
 
   if [[ -f "${dst_inventory}" ]]; then
     # Backup existing router.db before any changes
-    local backup_file
-    backup_file="${dst_inventory}.backup.$(date +%Y%m%d_%H%M%S)"
     if [[ "${DRY_RUN}" == "true" ]]; then
-      log_info "[DRY-RUN] Would backup: ${dst_inventory} -> ${backup_file}"
+      log_info "[DRY-RUN] Would backup: ${dst_inventory}"
     else
+      # Create backup directory if it doesn't exist
+      local backup_dir="${OXIDIZED_ROOT}/config/backup-routerdb"
+      mkdir -p "${backup_dir}"
+      chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${backup_dir}"
+      chmod 755 "${backup_dir}"
+
+      local backup_file
+      backup_file="${backup_dir}/router.db.backup.$(date +%Y%m%d_%H%M%S)"
       cp "${dst_inventory}" "${backup_file}"
       chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${backup_file}"
       log_success "Backed up router.db: ${backup_file}"
@@ -471,7 +596,51 @@ GITCONFIG
       chmod 644 "${gitconfig}"
       log_success "Created: ${gitconfig}"
     fi
+
+    # Create minimal runtime .env file for management scripts
+    log_info "Creating runtime configuration file..."
+    create_runtime_env
   fi
+}
+
+# Create minimal runtime .env file
+# This file contains only the essential variables needed by management scripts
+# (oxidized-start.sh, oxidized-stop.sh, oxidized-restart.sh)
+create_runtime_env() {
+  local runtime_env="${OXIDIZED_ROOT}/.env"
+
+  cat > "${runtime_env}" << EOF
+###############################################################################
+# Oxidized Runtime Configuration
+# Auto-generated by deploy.sh - DO NOT EDIT MANUALLY
+#
+# This file contains minimal runtime configuration needed by management scripts.
+# To change these values, edit the main .env file in the repository and re-run:
+#   sudo ./scripts/deploy.sh
+#
+# Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+###############################################################################
+
+# Root directory for all Oxidized data
+OXIDIZED_ROOT="${OXIDIZED_ROOT}"
+
+# Dedicated system user/group for Oxidized
+OXIDIZED_USER="${OXIDIZED_USER}"
+OXIDIZED_GROUP="${OXIDIZED_GROUP}"
+OXIDIZED_UID=${OXIDIZED_UID}
+OXIDIZED_GID=${OXIDIZED_GID}
+
+# Container name (for management scripts)
+CONTAINER_NAME="${CONTAINER_NAME}"
+
+###############################################################################
+# END OF RUNTIME CONFIGURATION
+###############################################################################
+EOF
+
+  chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${runtime_env}"
+  chmod 640 "${runtime_env}"
+  log_success "Created runtime configuration: ${runtime_env}"
 }
 
 # Configure credentials
@@ -543,12 +712,377 @@ initialize_git() {
   sudo -u "${OXIDIZED_USER}" git config user.name "${GIT_USER_NAME:-Oxidized}"
   sudo -u "${OXIDIZED_USER}" git config user.email "${GIT_USER_EMAIL:-oxidized@example.com}"
 
-  # Create initial commit
-  sudo -u "${OXIDIZED_USER}" tee README.md > /dev/null << EOF
-# Network Device Configurations
+  # Create comprehensive README.md
+  sudo -u "${OXIDIZED_USER}" tee README.md > /dev/null << 'EOF'
+# 🔧 Network Device Configuration Backups
 
-This repository contains automated backups of network device configurations.
-Managed by Oxidized.
+> Automated network device configuration backups managed by [Oxidized](https://github.com/ytti/oxidized)
+
+[![Automated Backups](https://img.shields.io/badge/backups-automated-success)](https://github.com/ytti/oxidized)
+[![Git Versioned](https://img.shields.io/badge/versioning-git-blue)](https://git-scm.com/)
+
+## 📋 Overview
+
+This repository contains automated backups of network device configurations collected by Oxidized. Each device's configuration is stored as a separate file and tracked with full version history, allowing you to:
+
+- 📊 Track configuration changes over time
+- 🔍 Compare configurations between different points in time
+- 📝 Review who made changes and when
+- ⏮️ Restore previous configurations if needed
+- 🔎 Search for specific configuration parameters across devices
+
+## 🚀 Deployment Code
+
+This Oxidized instance was deployed using the containerized deployment system available at:
+
+**📦 [deploy-containerized-oxidized](https://github.com/christopherpaquin/deploy-containerized-oxidized)**
+
+The deployment repository contains:
+- 🐳 Podman/container configuration for Oxidized
+- ⚙️ Automated deployment scripts (`deploy.sh`)
+- 🔧 Configuration templates and management tools
+- 📝 Complete documentation for setup and maintenance
+- 🛠️ Device management utilities (`add-device.sh`, `test-device.sh`)
+- 🔄 Remote repository setup automation (`setup-remote-repo.sh`)
+
+### Quick Links
+
+| Resource | Description |
+|----------|-------------|
+| [Main README](https://github.com/christopherpaquin/deploy-containerized-oxidized#readme) | Complete deployment documentation |
+| [Quick Start Guide](https://github.com/christopherpaquin/deploy-containerized-oxidized/blob/main/docs/QUICK-START.md) | Get started in minutes |
+| [Management Scripts](https://github.com/christopherpaquin/deploy-containerized-oxidized/tree/main/scripts) | All automation scripts |
+| [Documentation](https://github.com/christopherpaquin/deploy-containerized-oxidized/tree/main/docs) | Full docs directory |
+
+If you need to modify the Oxidized configuration, add devices, or troubleshoot the deployment, refer to the deployment repository above.
+
+## 📁 Repository Structure
+
+```
+.
+├── README.md                    # This file
+├── device1.example.com          # Device configuration file
+├── device2.example.com          # Device configuration file
+└── router.lab                   # Device configuration file
+```
+
+Each file contains the complete running configuration for a network device. Files are named using the device's hostname or FQDN as defined in Oxidized's `router.db`.
+
+## 🌐 Viewing Configurations via GitHub Web UI
+
+### View Current Configuration
+
+1. **Browse to this repository** on GitHub
+2. **Click on any device file** (e.g., `router.lab`)
+3. The current configuration will be displayed with syntax highlighting
+
+### View Configuration History
+
+1. **Click on a device file** to open it
+2. **Click "History"** button (top right, next to "Blame")
+3. View all configuration changes with timestamps and commit messages
+4. **Click any commit** to see exactly what changed
+
+### Compare Configurations
+
+#### Compare Different Time Points (Same Device)
+
+1. **Open the device file** → Click **"History"**
+2. **Find two commits** you want to compare
+3. Click the **commit hash** (e.g., `abc1234`) of the older commit
+4. Click **"Browse files"** button → Navigate back to the device file
+5. In the URL bar, you'll see `github.com/user/repo/blob/COMMIT_HASH/device`
+6. **Open a new tab** and navigate to the newer commit or current version
+7. Use GitHub's **compare feature**: `github.com/user/repo/compare/OLD_COMMIT...NEW_COMMIT`
+
+#### Quick Compare (Last Change)
+
+1. **Click on device file** → **"History"**
+2. **Click the latest commit** to see most recent changes
+3. Red lines = removed configuration
+4. Green lines = added configuration
+
+#### Compare Two Devices (Current Configs)
+
+GitHub doesn't have a built-in side-by-side file comparison, but you can:
+1. **Open device 1** in one browser tab
+2. **Open device 2** in another browser tab
+3. Manually compare, or use browser extensions like "Tab Compare"
+
+## 💻 Working with Git Command Line
+
+### Prerequisites
+
+```bash
+# Clone this repository (if not already done)
+git clone git@github.com:username/repo.git
+cd repo
+```
+
+### View Configuration Files
+
+```bash
+# List all device configurations
+ls -1
+
+# View a device's current configuration
+cat device.example.com
+
+# View with syntax highlighting (if 'bat' is installed)
+bat device.example.com
+
+# View with pagination
+less device.example.com
+```
+
+### View Configuration History
+
+```bash
+# View all changes to a specific device
+git log --oneline device.example.com
+
+# View detailed history with diffs
+git log -p device.example.com
+
+# View history with statistics
+git log --stat device.example.com
+
+# View commits from last 7 days
+git log --since="7 days ago" device.example.com
+
+# View commits by date range
+git log --since="2024-01-01" --until="2024-01-31" device.example.com
+
+# Show the last 10 commits
+git log -10 --oneline device.example.com
+```
+
+### Compare Configurations
+
+#### Compare Current vs Previous Commit
+
+```bash
+# Show what changed in the last commit
+git diff HEAD~1 device.example.com
+
+# Show last change with context
+git show HEAD:device.example.com
+```
+
+#### Compare Specific Commits
+
+```bash
+# Compare two specific commits
+git diff COMMIT1 COMMIT2 device.example.com
+
+# Example with actual hashes
+git diff abc1234 def5678 device.example.com
+
+# Compare with specific date
+git diff "main@{2024-01-01}" main device.example.com
+```
+
+#### Compare Current vs Specific Time
+
+```bash
+# Compare current config vs 7 days ago
+git diff "HEAD@{7 days ago}" HEAD device.example.com
+
+# Compare current config vs specific date
+git diff "main@{2024-01-15}" main device.example.com
+
+# Compare current config vs specific commit
+git diff abc1234 HEAD device.example.com
+```
+
+#### Side-by-Side Comparison
+
+```bash
+# Side-by-side diff (requires 'diff-so-fancy' or similar)
+git diff --color-words HEAD~1 device.example.com
+
+# Using git difftool (if configured)
+git difftool HEAD~1 device.example.com
+
+# Word-level diff
+git diff --word-diff HEAD~1 device.example.com
+```
+
+#### Compare Two Different Devices
+
+```bash
+# Compare configurations of two different devices
+diff device1.example.com device2.example.com
+
+# Side-by-side comparison
+diff -y device1.example.com device2.example.com
+
+# Unified diff format
+diff -u device1.example.com device2.example.com
+
+# Using git to compare (treats as different files)
+git diff --no-index device1.example.com device2.example.com
+```
+
+### Search Configurations
+
+```bash
+# Search for a specific term across all devices
+grep -r "ntp server" .
+
+# Search with line numbers
+grep -rn "snmp-server community" .
+
+# Search case-insensitive
+grep -ri "enable secret" .
+
+# Search for IP addresses
+grep -rE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" .
+
+# Search with context (3 lines before and after)
+grep -rn -C 3 "interface GigabitEthernet" .
+```
+
+### View Specific Past Configuration
+
+```bash
+# View a device's config from a specific commit
+git show COMMIT_HASH:device.example.com
+
+# View a device's config from 30 days ago
+git show "HEAD@{30 days ago}":device.example.com
+
+# View a device's config from specific date
+git show "main@{2024-01-15}":device.example.com
+
+# Save historical config to a file
+git show abc1234:device.example.com > device-backup-2024-01-15.txt
+```
+
+### Advanced Git Log Options
+
+```bash
+# View compact log with graph
+git log --oneline --graph --all
+
+# View log with file change statistics
+git log --stat device.example.com
+
+# View log with actual changes (full diff)
+git log -p device.example.com
+
+# View only merge commits
+git log --merges
+
+# View only commits that modified specific text
+git log -S "ntp server" device.example.com
+
+# View log with custom format
+git log --pretty=format:"%h - %an, %ar : %s" device.example.com
+
+# View who changed what (blame)
+git blame device.example.com
+```
+
+## 🔍 Common Use Cases
+
+### "What changed on this device yesterday?"
+
+```bash
+# Via Git
+git log --since="yesterday" --until="today" -p device.example.com
+
+# Via GitHub UI
+1. Open device file → History
+2. Filter commits by date
+```
+
+### "What was the configuration on January 15th?"
+
+```bash
+# Via Git
+git show "main@{2024-01-15}":device.example.com
+
+# Via GitHub UI
+1. Open device file → History
+2. Find commit closest to Jan 15th
+3. Click commit to view
+```
+
+### "Compare this device's config from last week to now"
+
+```bash
+# Via Git
+git diff "HEAD@{1 week ago}" HEAD device.example.com
+
+# Via GitHub UI
+1. Open device file → History
+2. Note commit hash from last week (e.g., abc1234)
+3. Use compare: github.com/user/repo/compare/abc1234...main
+```
+
+### "Find all devices with NTP server configured"
+
+```bash
+# Via Git
+grep -r "ntp server" .
+
+# Via GitHub UI
+Use GitHub's search feature: Press 't' to search files, or use the search bar
+```
+
+### "Restore device to configuration from 2 weeks ago"
+
+```bash
+# View the old configuration
+git show "HEAD@{2 weeks ago}":device.example.com > restore-config.txt
+
+# Review the file
+cat restore-config.txt
+
+# Manually apply to device (copy/paste or use TFTP/SCP)
+```
+
+## 📊 Configuration Change Tracking
+
+All configuration changes are automatically tracked:
+
+- **Who**: Git commits show which user account made changes (usually "oxidized")
+- **When**: Timestamps show exactly when the backup was taken
+- **What**: Full diffs show exactly what configuration lines changed
+
+## 🔐 Security Notes
+
+- ⚠️ **Keep this repository PRIVATE** - configurations may contain sensitive information
+- 🔑 Configurations may include passwords, SNMP communities, and other secrets
+- 🚫 Never make this repository public
+- 👥 Only grant access to authorized network administrators
+
+## 🤖 Automation
+
+- 🕐 Backups run automatically every hour (configurable in Oxidized)
+- 📤 Changes are automatically committed to this repository
+- 🔄 Git push occurs every 5 minutes (if auto-push is enabled)
+- 📧 (Optional) Configure notifications for configuration changes
+
+## 📚 Additional Resources
+
+- [Oxidized Documentation](https://github.com/ytti/oxidized)
+- [Git Documentation](https://git-scm.com/doc)
+- [GitHub Docs: Comparing Commits](https://docs.github.com/en/pull-requests/committing-changes-to-your-project/viewing-and-comparing-commits/comparing-commits)
+- [Git Diff Cheat Sheet](https://git-scm.com/docs/git-diff)
+- [Deploy Containerized Oxidized](https://github.com/christopherpaquin/deploy-containerized-oxidized) - Deployment code for this instance
+
+## 💡 Tips
+
+- Use `git log --all --full-history --grep="pattern"` to search commit messages
+- Use `git log -S "search string"` to find when specific configuration was added/removed
+- Create git aliases for commonly used commands
+- Consider using a git GUI tool like GitKraken or SourceTree for visual comparisons
+
+---
+
+**Generated by Oxidized** | Last updated: $(date '+%Y-%m-%d %H:%M:%S %Z')
 EOF
 
   sudo -u "${OXIDIZED_USER}" git add README.md
@@ -675,6 +1209,49 @@ install_logrotate() {
   fi
 }
 
+# Install log tailer service
+install_log_tailer() {
+  log_step "Installing Oxidized log tailer"
+
+  local src_script="${REPO_ROOT}/containers/quadlet/oxidized-log-tailer.sh"
+  local dst_script="/usr/local/bin/oxidized-log-tailer.sh"
+  local src_service="${REPO_ROOT}/containers/quadlet/oxidized-logger.service"
+  local dst_service="/etc/systemd/system/oxidized-logger.service"
+
+  if [[ ! -f "${src_script}" ]]; then
+    log_error "Log tailer script not found: ${src_script}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  if [[ ! -f "${src_service}" ]]; then
+    log_error "Log tailer service not found: ${src_service}"
+    exit ${EXIT_GENERAL_FAILURE}
+  fi
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log_info "[DRY-RUN] Would install log tailer script and service"
+    return
+  fi
+
+  # Install script
+  cp "${src_script}" "${dst_script}"
+  chmod 755 "${dst_script}"
+  log_success "Installed: ${dst_script}"
+
+  # Install service
+  cp "${src_service}" "${dst_service}"
+  chmod 644 "${dst_service}"
+  log_success "Installed: ${dst_service}"
+
+  # Reload systemd and enable service
+  systemctl daemon-reload
+  log_success "Reloaded systemd daemon"
+
+  if systemctl enable oxidized-logger.service 2> /dev/null; then
+    log_success "Enabled oxidized-logger.service"
+  fi
+}
+
 # Install MOTD (Message of the Day)
 install_motd() {
   log_step "Installing MOTD"
@@ -779,6 +1356,7 @@ install_helper_scripts() {
     "oxidized-stop.sh"
     "oxidized-restart.sh"
     "force-backup.sh"
+    "setup-remote-repo.sh"
   )
 
   for script in "${helper_scripts[@]}"; do
@@ -793,14 +1371,6 @@ install_helper_scripts() {
     if [[ "${DRY_RUN}" == "true" ]]; then
       log_info "[DRY-RUN] Would copy: ${src_script} -> ${dst_script}"
     else
-      # Backup existing script if it exists (update scenario)
-      if [[ -f "${dst_script}" ]]; then
-        local backup_file
-        backup_file="${dst_script}.backup.$(date +%Y%m%d_%H%M%S)"
-        cp "${dst_script}" "${backup_file}"
-        log_info "Backed up existing script: ${backup_file}"
-      fi
-
       cp "${src_script}" "${dst_script}"
       chown "${OXIDIZED_UID}:${OXIDIZED_GID}" "${dst_script}"
       chmod 755 "${dst_script}"
@@ -885,11 +1455,13 @@ install_nginx() {
     return
   fi
 
-  log_info "Installing nginx and httpd-tools..."
-  if dnf install -y nginx httpd-tools &> /dev/null; then
+  log_info "Installing nginx, httpd-tools, sshpass, and expect..."
+  if dnf install -y nginx httpd-tools sshpass expect &> /dev/null; then
     log_success "Installed nginx $(nginx -v 2>&1 | cut -d/ -f2)"
+    log_success "Installed sshpass (required for SSH password authentication testing)"
+    log_success "Installed expect (required for telnet authentication testing)"
   else
-    log_error "Failed to install nginx"
+    log_error "Failed to install required packages"
     exit ${EXIT_GENERAL_FAILURE}
   fi
 }
@@ -1171,6 +1743,13 @@ start_service() {
   # Start service
   if systemctl start oxidized.service; then
     log_success "Started oxidized.service"
+
+    # Start log tailer service
+    if systemctl start oxidized-logger.service 2> /dev/null; then
+      log_success "Started oxidized-logger.service"
+    else
+      log_warn "Failed to start oxidized-logger.service (non-fatal)"
+    fi
   else
     log_error "Failed to start oxidized.service"
     log_error "Check status with: systemctl status oxidized.service"
@@ -1403,6 +1982,10 @@ ${COLOR_BLUE}Next Steps:${COLOR_RESET}
    ${OXIDIZED_ROOT}/scripts/validate-router-db.sh  # Validate router.db syntax
    ${OXIDIZED_ROOT}/scripts/test-device.sh <device-name>  # Test specific device
 
+8. ${COLOR_YELLOW}Setup remote repository (optional):${COLOR_RESET}
+   ${OXIDIZED_ROOT}/scripts/setup-remote-repo.sh   # Configure GitHub/GitLab backup
+   See: ${REPO_ROOT}/docs/QUICK_START_REMOTE_REPO.md
+
 ${COLOR_BLUE}Data Locations:${COLOR_RESET}
   Configuration: ${OXIDIZED_ROOT}/config/
   Device List:   ${OXIDIZED_ROOT}/config/router.db (colon-delimited CSV)
@@ -1425,9 +2008,11 @@ ${COLOR_BLUE}Troubleshooting:${COLOR_RESET}
     - Check SELinux contexts: ls -laZ ${OXIDIZED_ROOT}
 
 ${COLOR_BLUE}Documentation:${COLOR_RESET}
-  ${REPO_ROOT}/docs/INSTALL.md         # Installation guide
-  ${REPO_ROOT}/docs/UPGRADE.md         # Upgrade procedures
-  ${REPO_ROOT}/docs/monitoring/ZABBIX.md # Monitoring setup
+  ${REPO_ROOT}/docs/INSTALL.md                  # Installation guide
+  ${REPO_ROOT}/docs/UPGRADE.md                  # Upgrade procedures
+  ${REPO_ROOT}/docs/QUICK_START_REMOTE_REPO.md  # Remote repository quick start
+  ${REPO_ROOT}/docs/REMOTE_REPOSITORY.md        # Remote repository full guide
+  ${REPO_ROOT}/docs/monitoring/ZABBIX.md        # Monitoring setup
 
 ${COLOR_GREEN}Happy backing up! 🎉${COLOR_RESET}
 
@@ -1489,6 +2074,7 @@ main() {
   create_network
   install_quadlet
   install_logrotate
+  install_log_tailer
   install_motd
   install_documentation
   install_helper_scripts

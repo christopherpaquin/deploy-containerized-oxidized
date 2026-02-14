@@ -41,11 +41,7 @@
 # - asa       : Cisco ASA
 # - panos     : Palo Alto PAN-OS
 # - aoscx     : Aruba AOS-CX
-# - tplink    : TP-Link switches (NOTE: use "tplink" NOT "tp-link")
 # - See: https://github.com/yggdrasil-network/oxidized/tree/master/lib/oxidized/model
-#
-# IMPORTANT: Model names are case-sensitive and must match exactly.
-# Common mistakes: "tp-link" (wrong) vs "tplink" (correct)
 #
 # EXAMPLE ENTRIES (COMMENTED OUT - UNCOMMENT AND MODIFY TO USE):
 # ================================================================
@@ -78,22 +74,22 @@
 # Example 9: Cisco Nexus
 # datacenter-spine01:10.1.4.20:nxos:dc-switches:dcadmin:CHANGEME
 
-# Example 10: TP-Link switch (NOTE: model is "tplink" not "tp-link")
-# tplink-switch01:192.168.1.1:tplink:lab-switches:admin:CHANGEME
-
-# Example 11: Global credentials mode (leave username/password blank)
-# branch-sw02:10.2.2.2:ios:branch::
-# branch-sw03:10.2.2.3:ios:branch::
-# branch-sw04:10.2.2.4:ios:branch::
+# Example 10: Global credentials mode (OMIT username/password fields entirely)
+# IMPORTANT: Do NOT use :: for global credentials - completely omit the fields
+# branch-sw02:10.2.2.2:ios:branch
+# branch-sw03:10.2.2.3:ios:branch
+# branch-sw04:10.2.2.4:ios:branch
 
 # ADD YOUR DEVICES BELOW:
 # =======================
+#
 # IMPORTANT: At least one device entry is required for Oxidized to start.
 # A test device is included below to enable the Web UI. Replace it with your real devices.
 #
 # TEST DEVICE (Replace with your actual network devices)
 # This is a non-routable IP that won't cause connection attempts in your network
-test-device:192.0.2.1:ios:testing::
+# Note: Uses global credentials (username/password fields omitted)
+test-device:192.0.2.1:ios:testing
 #
 # NOTES:
 # - 192.0.2.0/24 is a TEST-NET reserved IP range (RFC 5737)

@@ -20,7 +20,7 @@ readonly COLOR_RESET=$'\033[0m'
 
 # Configuration
 readonly DEFAULT_ROUTER_DB="/var/lib/oxidized/config/router.db"
-readonly BACKUP_DIR="/var/lib/oxidized/config/backup"
+readonly BACKUP_DIR="/var/lib/oxidized/config/backup-routerdb"
 readonly CONFIG_FILE="/var/lib/oxidized/config/config"
 ROUTER_DB="${1:-${DEFAULT_ROUTER_DB}}"
 
@@ -651,8 +651,8 @@ prompt_credentials() {
     echo "${username}:${password}"
   else
     log_success "Using default credentials from config"
-    # Return ONLY a single colon for empty credentials
-    echo ":"
+    # Return EMPTY STRING to omit credential fields (4-field format)
+    echo ""
   fi
 }
 
@@ -660,17 +660,17 @@ prompt_credentials() {
 validate_entry() {
   local entry=$1
 
-  # Count colons (should be exactly 5)
+  # Count colons (should be 3 for global creds or 5 for device-specific)
   local colon_count
   colon_count=$(echo "${entry}" | tr -cd ':' | wc -c)
 
-  if [[ ${colon_count} -ne 5 ]]; then
-    log_error "Invalid entry format: expected 5 colons, got ${colon_count}"
+  if [[ ${colon_count} -ne 3 ]] && [[ ${colon_count} -ne 5 ]]; then
+    log_error "Invalid entry format: expected 3 colons (global creds) or 5 colons (device creds), got ${colon_count}"
     log_error "Entry: ${entry}"
     return 1
   fi
 
-  # Extract fields
+  # Extract fields (works for both 4-field and 6-field format)
   IFS=':' read -r name ip model group username password <<< "${entry}"
 
   # Validate required fields
@@ -701,7 +701,7 @@ create_backup() {
   # Create backup with timestamp
   local timestamp
   timestamp=$(date +%Y%m%d_%H%M%S)
-  local backup_file="${BACKUP_DIR}/router.db.${timestamp}"
+  local backup_file="${BACKUP_DIR}/router.db.backup.${timestamp}"
 
   if cp "${router_db}" "${backup_file}"; then
     chmod 600 "${backup_file}"
@@ -818,7 +818,13 @@ main() {
   echo "" >&2
 
   # Build entry
-  local entry="${hostname}:${ip}:${model}:${group}:${credentials}"
+  # If credentials is empty, use 4-field format (global credentials)
+  # If credentials has value, use 6-field format (device-specific credentials)
+  if [[ -z "${credentials}" ]]; then
+    local entry="${hostname}:${ip}:${model}:${group}"
+  else
+    local entry="${hostname}:${ip}:${model}:${group}:${credentials}"
+  fi
 
   # Display entry for review
   echo "" >&2
@@ -843,11 +849,12 @@ main() {
   echo "" >&2
   echo -e "${COLOR_CYAN}Router.db format:${COLOR_RESET}" >&2
   # Mask password in display
-  local display_entry="${hostname}:${ip}:${model}:${group}:"
-  if [[ -n "${cred_user}" ]]; then
-    display_entry="${display_entry}${cred_user}:********"
+  if [[ -z "${credentials}" ]]; then
+    # 4-field format (global credentials)
+    local display_entry="${hostname}:${ip}:${model}:${group}"
   else
-    display_entry="${display_entry}:"
+    # 6-field format (device-specific credentials)
+    local display_entry="${hostname}:${ip}:${model}:${group}:${cred_user}:********"
   fi
   echo "  ${display_entry}" >&2
   echo "" >&2
