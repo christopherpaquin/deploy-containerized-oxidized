@@ -462,24 +462,93 @@ initial_push() {
   # Check if remote has any commits
   if run_as_oxidized git ls-remote --exit-code "${remote_name}" "${branch_name}" &> /dev/null; then
     log_warning "Remote branch '${branch_name}' already exists"
-    log_warning "This will force-push local history to remote"
+    log_info "Pulling existing history from remote to preserve device configs..."
 
-    read -rp "$(echo -e "${BOLD}Continue with force push? [y/N]:${NC} ")" choice
-    case "${choice}" in
-      [Yy]*)
-        run_as_oxidized git push -u "${remote_name}" "${branch_name}" --force
-        log_success "Force-pushed to remote repository"
-        ;;
-      *)
-        log_info "Attempting regular push with merge..."
-        if run_as_oxidized git push -u "${remote_name}" "${branch_name}"; then
-          log_success "Pushed to remote repository"
-        else
-          log_error "Push failed. You may need to manually resolve conflicts."
+    # Fetch remote branch
+    if ! run_as_oxidized git fetch "${remote_name}" "${branch_name}"; then
+      log_error "Failed to fetch from remote"
+      return 1
+    fi
+
+    # Check if local and remote have diverged
+    local local_commit
+    local remote_commit
+    local_commit=$(run_as_oxidized git rev-parse HEAD 2> /dev/null || echo "")
+    remote_commit=$(run_as_oxidized git rev-parse "${remote_name}/${branch_name}" 2> /dev/null || echo "")
+
+    if [[ "${local_commit}" == "${remote_commit}" ]]; then
+      log_success "Local and remote are already in sync"
+      return 0
+    fi
+
+    # Try to merge remote into local (allow unrelated histories for fresh deployments)
+    log_info "Merging remote history into local repository..."
+
+    # Use -X ours strategy to favor local README.md in case of conflicts
+    if run_as_oxidized git merge "${remote_name}/${branch_name}" --allow-unrelated-histories --strategy-option=ours --no-edit -m "Merge remote history after fresh deployment"; then
+      log_success "Successfully merged remote history"
+
+      # Count device files restored
+      local device_count
+      device_count=$(find . -type f ! -path "./.git/*" ! -name "README.md" | wc -l)
+      if [[ ${device_count} -gt 0 ]]; then
+        log_success "Restored ${device_count} device configuration file(s) from remote"
+      fi
+
+      log_info "Pushing merged history to remote..."
+      if run_as_oxidized git push -u "${remote_name}" "${branch_name}"; then
+        log_success "Pushed to remote repository"
+      else
+        log_error "Push failed after merge"
+        return 1
+      fi
+    else
+      # Merge failed - try to auto-resolve README.md conflict
+      log_warning "Merge had conflicts, attempting auto-resolution..."
+
+      if run_as_oxidized git status | grep -q "README.md"; then
+        log_info "README.md conflict detected - keeping local (enhanced) version"
+        # Keep our (local) version of README.md
+        run_as_oxidized git checkout --ours README.md
+        run_as_oxidized git add README.md
+
+        # Check if there are other conflicts
+        if run_as_oxidized git diff --name-only --diff-filter=U | grep -qv "README.md"; then
+          log_error "Additional conflicts detected beyond README.md"
+          log_info "Manual resolution required:"
+          log_info "  cd ${OXIDIZED_REPO}"
+          log_info "  git status"
           return 1
         fi
-        ;;
-    esac
+
+        # Complete the merge
+        if run_as_oxidized git commit --no-edit -m "Merge remote history (kept local README.md)"; then
+          log_success "Auto-resolved conflicts and completed merge"
+
+          local device_count
+          device_count=$(find . -type f ! -path "./.git/*" ! -name "README.md" | wc -l)
+          if [[ ${device_count} -gt 0 ]]; then
+            log_success "Restored ${device_count} device configuration file(s) from remote"
+          fi
+
+          if run_as_oxidized git push -u "${remote_name}" "${branch_name}"; then
+            log_success "Pushed to remote repository"
+          else
+            log_error "Push failed after merge"
+            return 1
+          fi
+        else
+          log_error "Failed to complete merge"
+          return 1
+        fi
+      else
+        log_error "Unexpected merge conflict"
+        log_info "Manual resolution required:"
+        log_info "  cd ${OXIDIZED_REPO}"
+        log_info "  git status"
+        return 1
+      fi
+    fi
   else
     run_as_oxidized git push -u "${remote_name}" "${branch_name}"
     log_success "Pushed to remote repository"
@@ -729,8 +798,14 @@ display_user_context() {
   echo -e "  2. Shows you the public key to add to GitHub" >&2
   echo -e "  3. Tests SSH connection to GitHub as ${OXIDIZED_USER}" >&2
   echo -e "  4. Configures git remote repository" >&2
-  echo -e "  5. Pushes existing backups to remote" >&2
-  echo -e "  6. Optionally sets up automatic push every 5 minutes" >&2
+  echo -e "  5. Merges existing remote history (preserves device configs)" >&2
+  echo -e "  6. Pushes backups to remote" >&2
+  echo -e "  7. Optionally sets up automatic push every 5 minutes" >&2
+  echo "" >&2
+  echo -e "${YELLOW}⚠  IMPORTANT - After Fresh Deployment:${NC}" >&2
+  echo -e "  • If re-deploying after uninstall, this script will automatically" >&2
+  echo -e "    merge your existing GitHub history to preserve device configs" >&2
+  echo -e "  • No manual steps needed - just run this script normally" >&2
   echo "" >&2
 
   read -rp "$(echo -e "${BOLD}Press Enter to continue...${NC} ")"
